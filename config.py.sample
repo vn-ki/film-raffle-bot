@@ -1,0 +1,11 @@
+CONFIG = {}
+
+CONFIG["GUILD"] = {
+    "film-raffle-role-id": ,
+    "film-raffle-channel-id": ,
+    "privileged-roles": [],
+}
+
+CONFIG["BOT"] = {
+    "bot-token": "",
+}

@@ -1,11 +1,12 @@
 import discord
-from configparser import ConfigParser
 import logging
 import random
 import copy
 
-cfg = ConfigParser()
-cfg.read('cfg.ini')
+from discord.ext import commands
+
+from config import CONFIG
+from lb_bot import get_movie_title
 
 client = discord.Client()
 
@@ -24,8 +25,28 @@ class MyClient(discord.Client):
     async def on_message(self, message):
         if message.author == self.user:
             return
-        # TODO: check user perms
-        print(self.raffle_channel_id)
+        if not self.check_raffle_channel(message):
+            return
+        guild = message.guild
+
+        if message.content.startswith('!f'):
+            movie_query = message.content[len('!f '):]
+            movie_title = movie_query
+            try:
+                movie_title = await get_movie_title(movie_query)
+            except Exception as e:
+                logging.error(f"error occured while getting '{movie_query}'")
+
+            print(movie_title)
+            return
+
+        # XXX: admin section check admin perms
+        privileged_roles = None
+        for role in CONFIG["GUILD"]["privileged-roles"]:
+            privileged_roles = privileged_roles or guild.get_role(role)
+        if privileged_roles == None or message.author not in privileged_roles.members:
+            await message.channel.send("You do not have the authority to do that.")
+            return
         if message.content.startswith('!fr-start'):
             await self.start_film_raffle()
         elif message.content.startswith('!fr-roll'):
@@ -120,6 +141,11 @@ class MyClient(discord.Client):
         except discord.HTTPException:
             pass
 
+    def check_raffle_channel(self, payload) -> bool:
+        # TODO: santize the input??
+        # make the input id??
+        return payload.channel.id == self.raffle_channel_id
+
     def check_emoji_payload(self, payload: discord.RawReactionActionEvent) -> bool:
         """
         Check if emoji is the one we care about and all it's properties are correct.
@@ -146,8 +172,9 @@ class MyClient(discord.Client):
 intents = discord.Intents.default()
 intents.members = True
 
-raffle_channel_id = int(cfg.get("GUILD", "film-raffle-channel-id"))
-raffle_role_id = int(cfg.get("GUILD", "film-raffle-role-id"))
+raffle_channel_id = CONFIG["GUILD"]["film-raffle-channel-id"]
+raffle_role_id = CONFIG["GUILD"]["film-raffle-role-id"]
 
-client = MyClient(raffle_channel_id, raffle_role_id, intents=intents)
-client.run(cfg.get("BOT", "bot-token"))
+bot = MyClient(raffle_channel_id, raffle_role_id, intents=intents)
+
+bot.run(CONFIG["BOT"]["bot-token"])
