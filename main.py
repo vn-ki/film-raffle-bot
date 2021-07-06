@@ -7,6 +7,7 @@ from discord.ext import commands
 
 from config import CONFIG
 from lb_bot import get_movie_title
+from db import initialize_db
 
 client = discord.Client()
 
@@ -142,7 +143,7 @@ class MyClient(discord.Client):
             pass
 
     def check_raffle_channel(self, payload) -> bool:
-        # TODO: santize the input??
+        # TODO: sanitize the input??
         # make the input id??
         return payload.channel.id == self.raffle_channel_id
 
@@ -171,6 +172,13 @@ class MyClient(discord.Client):
 
 intents = discord.Intents.default()
 intents.members = True
+
+# TODO: initialize and test database
+# initialize_db(
+#     CONFIG["DATABASE"]["db-name"],
+#     CONFIG["DATABASE"]["db-host"],
+#     CONFIG["DATABASE"]["db-username"],
+#     CONFIG["DATABASE"]["db-password"])
 
 raffle_channel_id = CONFIG["GUILD"]["film-raffle-channel-id"]
 raffle_role_id = CONFIG["GUILD"]["film-raffle-role-id"]

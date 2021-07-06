@@ -9,3 +9,10 @@ CONFIG["GUILD"] = {
 CONFIG["BOT"] = {
     "bot-token": "",
 }
+
+CONFIG["DATABASE"] = {
+    "db-username": "",
+    "db-password": "",
+    "db-host": "",
+    "db-name": "",
+}

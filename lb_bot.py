@@ -26,7 +26,8 @@ async def get_movie_title(query):
             if resp.status >= 400:
                 raise RuntimeError()
             soup = BeautifulSoup(await resp.text(), features="html.parser")
-            title = soup.select_one('ul.results > li').select_one('span.film-title-wrapper > a').text
+            title = soup.select_one('ul.results > li').select_one(
+                'span.film-title-wrapper > a').text
             logging.debug(title)
             logging.info(f"got title '{title}' for query '{query}'")
             return title
@@ -63,6 +64,7 @@ def __check_year(keywords):
     if fullmatch(r'\(\d{4}\)', last_word):
         return last_word.replace('(', '').replace(')', '')
     return ''
+
 
 if __name__ == '__main__':
     t = get_movie_title('hail ceasar')
