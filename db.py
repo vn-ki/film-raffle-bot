@@ -3,15 +3,12 @@ from sqlalchemy.orm import relationship, backref, sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
-Session = None
-Engine = None
-
 
 class User(Base):
     __tablename__ = "User"
 
     user_id = Column(Text, primary_key=True)
-    lb_username = Column(Text, unique=True, nullable=False)
+    lb_username = Column(Text, unique=True, nullable=True)
     note = Column(Text, nullable=True)
 
 
@@ -28,81 +25,80 @@ class Raffle(Base):
         "received_recomm", uselist=False))
 
 
-# Initialize database connection
-def initialize_db(db_name, db_host, db_username, db_password):
-    engine_url = f'postgresql+psycopg2://{db_username}:{db_password}@{db_host}/{db_name}'
-    # echo=True in the meanwhile for debugging
-    Engine = create_engine(engine_url, echo=True)
+class Database:
+    Session = None
+    Engine = None
 
-    Base.metadata.create_all(bind=Engine)
-    Session = sessionmaker(bind=Engine)
+    def __init__(self, db_name, db_host, db_username, db_password, debug=False):
+        engine_url = f'postgresql+psycopg2://{db_username}:{db_password}@{db_host}/{db_name}'
+        if debug:
+            engine_url = 'sqlite:///./test.db'
+        # echo=True in the meanwhile for debugging
+        self.Engine = create_engine(engine_url, echo=True)
 
-# Add new user to database
-def add_user(user_id, lb_username, note=None):
-    session = Session()
+        Base.metadata.create_all(bind=self.Engine)
+        self.Session = sessionmaker(bind=self.Engine)
 
-    user = User()
+    def add_user(self, user_id, lb_username=None, note=None):
+        """Add new user to database"""
+        with self.Session() as session:
+            user = User()
 
-    user.user_id = user_id
-    user.lb_username = lb_username
-    user.note = note
+            user.user_id = user_id
+            user.lb_username = lb_username
+            user.note = note
 
-    session.add(user)
-    session.commit()
+            session.add(user)
+            session.commit()
 
-    session.close()
+    def update_user(self, user_id, lb_username, note=None):
+        """Add new user to database"""
+        with self.Session() as session:
+            user = session.query(User).filter_by(user_id=user_id).one_or_none()
+            user.lb_username = lb_username
+            if note != None:
+                user.note = note
+            session.commit()
 
-# Add new raffle entry to database
-def add_raffle_entry(sender_id, receiver_id):
-    session = Session()
+    def get_user(self, user_id):
+        with self.Session() as session:
+            return session.query(User).filter_by(user_id=user_id).one_or_none()
 
-    raffle = Raffle()
+    def add_raffle_entry(self, sender_id, receiver_id):
+        """Add new raffle entry to database"""
+        with self.Session() as session:
+            raffle = Raffle()
 
-    raffle.sender_id = sender_id
-    raffle.receiver_id = receiver_id
+            raffle.sender_id = sender_id
+            raffle.receiver_id = receiver_id
 
-    session.add(raffle)
-    session.commit()
+            session.add(raffle)
+            session.commit()
 
-    session.close()
+    # Update raffle entry with movie recommendation
+    def recomm_movie(self, sender_id, recomm):
+        with self.Session() as session:
+            result = session.query(Raffle).filter_by(sender_id=sender_id).one_or_none()
+            result.recomm = recomm
 
-# Update raffle entry with movie recommendation
-def recomm_movie(sender_id, recomm):
-    session = Session()
+            session.commit()
 
-    result = session.query(Raffle).filter_by(sender_id=sender_id).one_or_none()
-    result.recomm = recomm
+    # Get recommendation made BY a user
+    def get_recomm_by_sender(self, sender_id):
+        with self.Session() as session:
+            result = session.query(Raffle).filter_by(sender_id=sender_id).one_or_none()
+            return result
 
-    session.commit()
+    # Get recommendation made TO a user
+    def get_recomm_by_receiver(self, receiver_id):
+        with self.Session() as session:
+            result = session.query(Raffle).filter_by(
+                receiver_id=receiver_id).one_or_none()
+            return result
 
-    session.close()
+    # Delete all recommendations
+    def empty_recomms(self):
+        with self.Session() as session:
+            session.query(Raffle).delete()
 
-# Get recommendation made BY a user
-def get_recomm_by_sender(sender_id):
-    session = Session()
-
-    result = session.query(Raffle).filter_by(sender_id=sender_id).one_or_none()
-
-    session.close()
-
-    return result
-
-# Get recommendation made TO a user
-def get_recomm_by_receiver(receiver_id):
-    session = Session()
-
-    result = session.query(Raffle).filter_by(
-        receiver_id=receiver_id).one_or_none()
-
-    session.close()
-
-    return result
-
-# Delete all recommendations
-def empty_recomms(receiver_id):
-    session = Session()
-
-    session.query(Raffle).delete()
-
-    session.commit()
-    session.close()
+            session.commit()

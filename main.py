@@ -7,10 +7,17 @@ from discord.ext import commands
 
 from config import CONFIG
 from lb_bot import get_movie_title
-from db import initialize_db
+from db import Database
 
 client = discord.Client()
 
+db = Database(
+    CONFIG["DATABASE"]["db-name"],
+    CONFIG["DATABASE"]["db-host"],
+    CONFIG["DATABASE"]["db-username"],
+    CONFIG["DATABASE"]["db-password"],
+    debug=True,
+)
 
 class MyClient(discord.Client):
     def __init__(self, raffle_channel_id, raffle_role_id, *args, **kwargs):
@@ -26,32 +33,51 @@ class MyClient(discord.Client):
     async def on_message(self, message):
         if message.author == self.user:
             return
+        if isinstance(message.channel, discord.channel.DMChannel):
+            await self.dm_commands(message)
+            return
+
         if not self.check_raffle_channel(message):
             return
         guild = message.guild
 
-        if message.content.startswith('!f'):
+        if message.content.startswith('!f '):
             movie_query = message.content[len('!f '):]
-            movie_title = movie_query
+            movie_title = ''
             try:
                 movie_title = await get_movie_title(movie_query)
             except Exception as e:
                 logging.error(f"error occured while getting '{movie_query}'")
 
-            print(movie_title)
+            if movie_title == '':
+                movie_title = movie_query
+            db.recomm_movie(message.author.id, movie_title)
             return
 
         # XXX: admin section check admin perms
-        privileged_roles = None
+        found_user_in_priv = False
         for role in CONFIG["GUILD"]["privileged-roles"]:
-            privileged_roles = privileged_roles or guild.get_role(role)
-        if privileged_roles == None or message.author not in privileged_roles.members:
+            priv_role = guild.get_role(role)
+            if priv_role:
+                if message.author in priv_role.members:
+                    found_user_in_priv = True
+                    break
+        if not found_user_in_priv:
             await message.channel.send("You do not have the authority to do that.")
             return
         if message.content.startswith('!fr-start'):
-            await self.start_film_raffle()
+            try:
+                await self.start_film_raffle()
+            except Exception as e:
+                await message.channel.send("Bot has errored. Contact bot admins.")
+                logging.exception("error with starting film raffle")
+
         elif message.content.startswith('!fr-roll'):
-            await self.roll_film_raffle(message)
+            try:
+                await self.roll_film_raffle(message)
+            except Exception as e:
+                await message.channel.send("Bot has errored. Contact bot admins.")
+                logging.exception("error with rolling film raffle")
 
     async def start_film_raffle(self):
         """
@@ -64,6 +90,7 @@ class MyClient(discord.Client):
         self.role_message_id = new_message.id
 
     async def roll_film_raffle(self, message):
+        db.empty_recomms()
         guild = message.guild
         await message.channel.send("The Senate knows what's best for you. :dewit:")
         raffle_role = guild.get_role(self.raffle_role_id)
@@ -72,6 +99,7 @@ class MyClient(discord.Client):
         rando_list = self.create_random_mapping(users)
 
         for pair in rando_list:
+            db.add_raffle_entry(pair[0].id, pair[1].id)
             # Doesn't ping users
             roll_msg += '{} -> {}\n'.format(pair[0].mention, pair[1].mention)
             # This length is due to Discord forbidding messages greater than 2k chars
@@ -83,6 +111,50 @@ class MyClient(discord.Client):
             await message.channel.send(roll_msg)
         # TODO: Put chat in cfg
         await message.channel.send("That's all folks! If there's an issue contact the mods, otherwise have fun!")
+
+        for pair in rando_list:
+            await self.ping_user(guild, pair[0], pair[1])
+
+    async def ping_user(self, guild, user1, user2):
+        member = guild.get_member(user1.id)
+        if member is None:
+            return
+        lb_user1 = db.get_user(user1.id)
+        lb_user2 = db.get_user(user2.id)
+        message = f"Hello there!\n\nYou got {user2.mention} as your raffle parter.\n\n"
+        # XXX: What if the message goes past the 2000 char limit
+        # TODO: Fix that
+        if lb_user2:
+            if lb_user2.lb_username != None:
+                message += f"You can find them on Letterboxd under: {lb_user2.lb_username}."
+            if lb_user2.note:
+                message += f"They have a short info for you: {lb_user1.note}."
+
+            if lb_user1 and lb_user1.lb_username:
+                message += f'\n\n You can use lb-compare to find reccs easily: Visit https://lb-compare.herokuapp.com/{lb_user1.lb_username}/vs/{lb_user2.lb_username} .'
+            else:
+                message += '\n\n Be sure to add your letterboxd username using `!setlb` command.'
+
+        await user1.send(message)
+
+    async def dm_commands(self, message):
+        if message.content == '!h' or message.content.startswith('!help'):
+            await message.channel.send(CONFIG["CHAT"]["DM_HELP"])
+        if message.content.startswith('!setlb '):
+            inp = message.content[len('!setlb '):]
+            inp = inp.split(' ', 1)
+            if len(inp) == 1:
+                username = inp[0]
+                note = None
+            else:
+                username, note = inp
+            user = db.get_user(message.author.id)
+            if user is None:
+                db.add_user(message.author.id, username, note)
+                await message.channel.send("Username and note set successfuly")
+            else:
+                db.update_user(message.author.id, username, note)
+                await message.channel.send("Username and note updated successfuly")
 
     def create_random_mapping(self, users):
         """
@@ -101,6 +173,12 @@ class MyClient(discord.Client):
             choose.pop(choose.index(chosen))
         return randomized_list
 
+    async def create_user_if_not_exist(self, user):
+        dbuser = db.get_user(user.id)
+        if dbuser is None:
+            db.add_user(user.id)
+            await user.send(CONFIG["CHAT"]["DM_INTRO"])
+
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
         """Gives a role based on a reaction emoji."""
         if not self.check_emoji_payload(payload):
@@ -112,7 +190,7 @@ class MyClient(discord.Client):
         if role is None:
             logging.error("could not find role to add")
             return
-
+        await self.create_user_if_not_exist(payload.member)
         try:
             await payload.member.add_roles(role)
         except discord.HTTPException:

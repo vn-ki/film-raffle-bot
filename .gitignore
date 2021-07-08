@@ -1,5 +1,6 @@
 __pycache__/
 cfg.ini
 config.py
+test.db
 
 .vscode
