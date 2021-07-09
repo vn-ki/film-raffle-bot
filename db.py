@@ -34,7 +34,7 @@ class Database:
         if debug:
             engine_url = 'sqlite:///./test.db'
         # echo=True in the meanwhile for debugging
-        self.Engine = create_engine(engine_url, echo=True)
+        self.Engine = create_engine(engine_url, echo=False)
 
         Base.metadata.create_all(bind=self.Engine)
         self.Session = sessionmaker(bind=self.Engine)
@@ -51,11 +51,12 @@ class Database:
             session.add(user)
             session.commit()
 
-    def update_user(self, user_id, lb_username, note=None):
+    def update_user(self, user_id, *, lb_username=None, note=None):
         """Add new user to database"""
         with self.Session() as session:
             user = session.query(User).filter_by(user_id=user_id).one_or_none()
-            user.lb_username = lb_username
+            if lb_username != None:
+                user.lb_username = lb_username
             if note != None:
                 user.note = note
             session.commit()
@@ -90,20 +91,20 @@ class Database:
             return result
 
     # Get recommendation made BY a user
-    def get_recomm_by_sender(self, sender_id):
+    def get_raffle_entry_by_sender(self, sender_id):
         with self.Session() as session:
             result = session.query(Raffle).filter_by(sender_id=sender_id).one_or_none()
             return result
 
     # Get recommendation made TO a user
-    def get_recomm_by_receiver(self, receiver_id):
+    def get_raffle_entry_by_receiver(self, receiver_id):
         with self.Session() as session:
             result = session.query(Raffle).filter_by(
                 receiver_id=receiver_id).one_or_none()
             return result
 
     # Delete all recommendations
-    def empty_recomms(self):
+    def clear_raffle_db(self):
         with self.Session() as session:
             session.query(Raffle).delete()
 

@@ -20,88 +20,41 @@ db = Database(
     debug=True,
 )
 
-class MyClient(discord.Client):
+
+class MyClient(commands.Bot):
     def __init__(self, raffle_channel_id, raffle_role_id, *args, **kwargs):
         self.raffle_channel_id = raffle_channel_id
         self.raffle_role_id = raffle_role_id
         super().__init__(*args, **kwargs)
 
         self.emoji_for_role = discord.PartialEmoji(name='🎞')
+        self.raffle_rolled = False
 
         # ID of the message that can be reacted to to add/remove a role.
         self.role_message_id = 0
 
-    async def on_message(self, message):
-        if message.author == self.user:
-            return
-        if isinstance(message.channel, discord.channel.DMChannel):
-            await self.dm_commands(message)
-            return
-
-        if not self.check_raffle_channel(message):
-            return
-        guild = message.guild
-
-        if message.content.startswith('!f '):
-            movie_query = message.content[len('!f '):]
-            movie_title = ''
-            try:
-                movie_title = await get_movie_title(movie_query)
-            except Exception as e:
-                logging.error(f"error occured while getting '{movie_query}'")
-
-            if movie_title == '':
-                movie_title = movie_query
-            db.recomm_movie(message.author.id, movie_title)
-            return
-
-        # XXX: admin section check admin perms
-        found_user_in_priv = False
-        for role in CONFIG["GUILD"]["privileged-roles"]:
-            priv_role = guild.get_role(role)
-            if priv_role:
-                if message.author in priv_role.members:
-                    found_user_in_priv = True
-                    break
-        if not found_user_in_priv:
-            # await message.channel.send("You do not have the authority to do that.")
-            return
-        if message.content.startswith('!fr-start'):
-            try:
-                await self.start_film_raffle()
-            except Exception as e:
-                await message.channel.send("Bot has errored. Contact bot admins.")
-                logging.exception("error with starting film raffle")
-        elif message.content.startswith('!fr-roll'):
-            try:
-                await self.roll_film_raffle(message)
-            except Exception as e:
-                await message.channel.send("Bot has errored. Contact bot admins.")
-                logging.exception("error with rolling film raffle")
-        elif message.content.startswith('!dump-reccs'):
-            await self.send_all_reccs()
-
-    async def start_film_raffle(self):
-        """
-        Starts the film raffle.
-        Sends a message with the text with a reaction
-        """
-        raffle_channel = self.get_channel(self.raffle_channel_id)
-        new_message = await raffle_channel.send("React to me!")
-        await new_message.add_reaction(emoji=self.emoji_for_role)
-        self.role_message_id = new_message.id
+    async def clear_raffle_role(self, guild):
+        raffle_role = guild.get_role(self.raffle_role_id)
+        tasks = [asyncio.create_task(member.remove_roles(
+            raffle_role)) for member in raffle_role.members]
+        if tasks:
+            await asyncio.wait(tasks)
 
     async def send_all_reccs(self):
-        raffle_channel = self.get_channel(CONFIG["GUILD"]["all-recs-channel-id"])
+        raffle_channel = self.get_channel(
+            CONFIG["GUILD"]["all-recs-channel-id"])
         recs = db.get_all_reccs()
         if len(recs) == 0:
             return
         roll_msg = ''
         for rec in recs:
+            if rec.recomm == None:
+                continue
             d_sender = self.get_user(int(rec.sender.user_id))
             d_receiver = self.get_user(int(rec.receiver.user_id))
             if d_sender == None or d_receiver == None:
-                logging.error("sender or receiver not found. this shouldnt happen really.")
+                logging.error(
+                    "sender or receiver not found. this shouldnt happen really.")
                 continue
 
             roll_msg += f'{d_sender.name} » {d_receiver.name} | {rec.recomm}\n'
@@ -112,73 +65,36 @@ class MyClient(discord.Client):
         if len(roll_msg) > 0:
             await raffle_channel.send(roll_msg)
 
-    async def roll_film_raffle(self, message):
-        await self.send_all_reccs()
-        db.empty_recomms()
-        guild = message.guild
-        await message.channel.send("The Senate knows what's best for you. :dewit:")
-        raffle_role = guild.get_role(self.raffle_role_id)
-        users = [member for member in raffle_role.members if not member.bot]
-        roll_msg = ''
-        rando_list = self.create_random_mapping(users)
-
-        for pair in rando_list:
-            db.add_raffle_entry(pair[0].id, pair[1].id)
-            # Doesn't ping users
-            roll_msg += '{} -> {}\n'.format(pair[0].mention, pair[1].mention)
-            # This length is due to Discord forbidding messages greater than 2k chars
-            if len(roll_msg) > 1950:
-                await message.channel.send(roll_msg)
-                roll_msg = ''
-
-        if len(roll_msg) > 0:
-            await message.channel.send(roll_msg)
-        # TODO: Put chat in cfg
-        await message.channel.send("That's all folks! If there's an issue contact the mods, otherwise have fun!")
-
-        ping_tasks = [self.ping_user(guild, pair[0], pair[1]) for pair in rando_list]
-        await asyncio.wait(ping_tasks)
-
     async def ping_user(self, guild, user1, user2):
         member = guild.get_member(user1.id)
+        raffle_channel = guild.get_channel(self.raffle_channel_id)
+
         if member is None:
             return
         lb_user1 = db.get_user(user1.id)
         lb_user2 = db.get_user(user2.id)
-        message = f"Hello there!\n\nYou got {user2.mention} as your raffle parter.\n\n"
+        message = f"""
+__**Film Raffle Assignment**__
+The time has come! Please provide your recommendation in the r/Letterboxd server within 24 hours of this message.
+
+**You’ve been paired with:** {user2.mention}
+""".lstrip()
         # XXX: What if the message goes past the 2000 char limit
         # TODO: Fix that
         if lb_user2:
             if lb_user2.lb_username != None:
-                message += f"You can find them on Letterboxd under: {lb_user2.lb_username}."
+                message += f"**Their Letterboxd username is: {lb_user2.lb_username}**\n"
             if lb_user2.note:
-                message += f"They have a short info for you: {lb_user1.note}."
+                message += f"**Additional notes: {lb_user2.note}**\n"
 
-            if lb_user1 and lb_user1.lb_username:
-                message += f'\n\n You can use lb-compare to find reccs easily: Visit https://lb-compare.herokuapp.com/{lb_user1.lb_username}/vs/{lb_user2.lb_username} .'
+            if lb_user1 and lb_user1.lb_username and lb_user2.lb_username:
+                message += f'You can use lb-compare to quickly filter films you’ve seen that they haven’t: https://lb-compare.herokuapp.com/{lb_user1.lb_username}/vs/{lb_user2.lb_username} .'
             else:
-                message += '\n\n Be sure to add your letterboxd username using `!setlb` command.'
+                message += '\n\nBe sure to add your letterboxd username using `!setlb` command.'
+
+        message += f'\n\nTo submit your recommendation, head to the r/Letterboxd server {raffle_channel.mention} channel and use the `!f` command. Remember to tag your partner and let them know why you chose the film!'
 
         await user1.send(message)
-
-    async def dm_commands(self, message):
-        if message.content == '!h' or message.content.startswith('!help'):
-            await message.channel.send(CONFIG["CHAT"]["DM_HELP"])
-        if message.content.startswith('!setlb '):
-            inp = message.content[len('!setlb '):]
-            inp = inp.split(' ', 1)
-            if len(inp) == 1:
-                username = inp[0]
-                note = None
-            else:
-                username, note = inp
-            user = db.get_user(message.author.id)
-            if user is None:
-                db.add_user(message.author.id, username, note)
-                await message.channel.send("Username and note set successfuly")
-            else:
-                db.update_user(message.author.id, username, note)
-                await message.channel.send("Username and note updated successfuly")
 
     def create_random_mapping(self, users):
         """
@@ -275,16 +191,161 @@ class MyClient(discord.Client):
 intents = discord.Intents.default()
 intents.members = True
 
-# TODO: initialize and test database
-# initialize_db(
-#     CONFIG["DATABASE"]["db-name"],
-#     CONFIG["DATABASE"]["db-host"],
-#     CONFIG["DATABASE"]["db-username"],
-#     CONFIG["DATABASE"]["db-password"])
-
 raffle_channel_id = CONFIG["GUILD"]["film-raffle-channel-id"]
 raffle_role_id = CONFIG["GUILD"]["film-raffle-role-id"]
 
-bot = MyClient(raffle_channel_id, raffle_role_id, intents=intents)
+bot = MyClient(raffle_channel_id, raffle_role_id, command_prefix='!', intents=intents)
+
+
+def privileged():
+    async def predicate(ctx):
+        found_user_in_priv = False
+        for role in CONFIG["GUILD"]["privileged-roles"]:
+            priv_role = ctx.guild.get_role(role)
+            if priv_role:
+                if ctx.author in priv_role.members:
+                    found_user_in_priv = True
+                    break
+        return found_user_in_priv
+    return commands.check(predicate)
+
+def only_in_raffle_channel():
+    async def predicate(ctx):
+        return ctx.channel.id == raffle_channel_id
+    return commands.check(predicate)
+
+@bot.command(name='fr-start')
+@privileged()
+@only_in_raffle_channel()
+async def raffle_start(ctx):
+    """
+    Starts the film raffle. Sends a message with a reaction to join.
+    """
+    # clear all existing ones
+    await bot.clear_raffle_role(ctx.guild)
+
+    raffle_channel = bot.get_channel(bot.raffle_channel_id)
+    new_message = await raffle_channel.send("React to me!")
+    await new_message.add_reaction(emoji=bot.emoji_for_role)
+    bot.role_message_id = new_message.id
+    bot.raffle_rolled = False
+
+
+@bot.command(name='fr-roll')
+@privileged()
+@only_in_raffle_channel()
+async def roll_raffle(ctx):
+    """
+    Roll the raffle.
+    """
+    db.clear_raffle_db()
+    guild = ctx.guild
+    raffle_role = guild.get_role(bot.raffle_role_id)
+    users = [member for member in raffle_role.members if not member.bot]
+    if len(users) < 2:
+        await ctx.channel.send("Not enough users for rolling the raffle.")
+        return
+    await ctx.channel.send("The Senate knows what's best for you. :dewit:")
+    roll_msg = ''
+    rando_list = bot.create_random_mapping(users)
+
+    for pair in rando_list:
+        db.add_raffle_entry(pair[0].id, pair[1].id)
+        # Doesn't ping users
+        roll_msg += '{} -> {}\n'.format(pair[0].mention, pair[1].mention)
+        # This length is due to Discord forbidding messages greater than 2k chars
+        if len(roll_msg) > 1950:
+            await ctx.channel.send(roll_msg)
+            roll_msg = ''
+
+    if len(roll_msg) > 0:
+        await ctx.channel.send(roll_msg)
+    # TODO: Put chat in cfg
+    await ctx.channel.send("That's all folks! If there's an issue contact the mods, otherwise have fun!")
+    bot.raffle_rolled = True
+
+    ping_tasks = [bot.ping_user(guild, pair[0], pair[1])
+                  for pair in rando_list]
+    await asyncio.wait(ping_tasks)
+
+@bot.command(name='fr-role-swap')
+@privileged()
+@only_in_raffle_channel()
+async def role_swap(ctx):
+    guild = ctx.guild
+    raffle_role = guild.get_role(raffle_role_id)
+    mia_members = raffle_role.members
+    mia_member_id_set = set([member.id for member in mia_members])
+    async def assign_remove_role(member):
+        await member.remove_roles(raffle_role)
+        raffle = db.get_raffle_entry_by_sender(member.id)
+        receiver_id = int(raffle.receiver_id)
+        if receiver_id in mia_member_id_set:
+            return
+        receiver = guild.get_member(receiver_id)
+        if not receiver:
+            return
+        await receiver.add_roles(raffle_role)
+
+    tasks = [asyncio.create_task(assign_remove_role(member))
+             for member in mia_members]
+    if tasks:
+        await asyncio.wait(tasks)
+    await bot.send_all_reccs()
+
+@bot.command(name='dump-reccs')
+@only_in_raffle_channel()
+@privileged()
+async def dump_reccs(ctx):
+    """
+    Pretty prints all the reccomendations till now.
+    """
+    await bot.send_all_reccs()
+
+@bot.command(name='f', aliases=['film', 'kino'])
+@only_in_raffle_channel()
+async def recc_intercept(ctx, *, movie_query):
+    if not bot.raffle_rolled:
+        return
+    movie_title = ''
+    try:
+        movie_title = await get_movie_title(movie_query)
+    except Exception as e:
+        logging.error(f"error occured while getting '{movie_query}'")
+
+    if movie_title == '':
+        movie_title = movie_query
+
+    raffle_role = ctx.guild.get_role(raffle_role_id)
+    await ctx.author.remove_roles(raffle_role)
+    db.recomm_movie(ctx.author.id, movie_title)
+
+
+@bot.command()
+async def setlb(ctx, lb_username):
+    """
+    Use !setlb followed by your Letterboxd username to link your Letterboxd profile. This is mandatory.
+    """
+    user = db.get_user(ctx.author.id)
+    if user is None:
+        db.add_user(ctx.author.id, lb_username, None)
+        await ctx.channel.send("Username set successfuly")
+    else:
+        db.update_user(ctx.author.id, lb_username=lb_username)
+        await ctx.channel.send("Username updated successfuly")
+
+
+@bot.command()
+async def setnotes(ctx, *, note):
+    """
+    Use !setnotes followed by any preferences you may have (streaming services, preferred length, genre/mood, etc.) This is optional.
+    """
+    user = db.get_user(ctx.author.id)
+    if user is None:
+        db.add_user(ctx.author.id, None, note)
+        await ctx.channel.send("Note set successfuly")
+    else:
+        db.update_user(ctx.author.id, note=note)
+        await ctx.channel.send("Note updated successfuly")
 
 bot.run(CONFIG["BOT"]["bot-token"])
