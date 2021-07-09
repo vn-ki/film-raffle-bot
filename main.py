@@ -17,7 +17,7 @@ db = Database(
     CONFIG["DATABASE"]["db-host"],
     CONFIG["DATABASE"]["db-username"],
     CONFIG["DATABASE"]["db-password"],
-    debug=True,
+    # debug=True,
 )
 
 
@@ -43,7 +43,7 @@ class MyClient(commands.Bot):
     async def send_all_reccs(self):
         raffle_channel = self.get_channel(
             CONFIG["GUILD"]["all-recs-channel-id"])
-        recs = db.get_all_reccs()
+        recs = await db.get_all_reccs()
         if len(recs) == 0:
             return
         roll_msg = ''
@@ -71,8 +71,8 @@ class MyClient(commands.Bot):
 
         if member is None:
             return
-        lb_user1 = db.get_user(user1.id)
-        lb_user2 = db.get_user(user2.id)
+        lb_user1 = await db.get_user(user1.id)
+        lb_user2 = await db.get_user(user2.id)
         message = f"""
 __**Film Raffle Assignment**__
 The time has come! Please provide your recommendation in the r/Letterboxd server within 24 hours of this message.
@@ -114,9 +114,9 @@ The time has come! Please provide your recommendation in the r/Letterboxd server
         return randomized_list
 
     async def create_user_if_not_exist(self, user):
-        dbuser = db.get_user(user.id)
+        dbuser = await db.get_user(user.id)
         if dbuser is None:
-            db.add_user(user.id)
+            await db.add_user(user.id)
             await user.send(CONFIG["CHAT"]["DM_INTRO"])
 
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
@@ -240,7 +240,7 @@ async def roll_raffle(ctx):
     """
     Roll the raffle. **DANGER** This clears all existing raffle entries. Use `dump-reccs` first.
     """
-    db.clear_raffle_db()
+    await db.clear_raffle_db()
     guild = ctx.guild
     raffle_role = guild.get_role(bot.raffle_role_id)
     users = [member for member in raffle_role.members if not member.bot]
@@ -262,8 +262,8 @@ async def roll_raffle(ctx):
     if len(roll_msg) > 0:
         await ctx.channel.send(roll_msg)
 
-    db.add_raffle_entries([
-        Raffle(sender_id=pair[0].id, receiver_id=pair[1].id, recomm=None)
+    await db.add_raffle_entries([
+        Raffle(sender_id=str(pair[0].id), receiver_id=str(pair[1].id), recomm=None)
         for pair in rando_list
     ])
     # TODO: Put chat in cfg
@@ -284,7 +284,7 @@ async def role_swap(ctx):
     mia_member_id_set = set([member.id for member in mia_members])
     async def assign_remove_role(member):
         await member.remove_roles(raffle_role)
-        raffle = db.get_raffle_entry_by_sender(member.id)
+        raffle = await db.get_raffle_entry_by_sender(member.id)
         receiver_id = int(raffle.receiver_id)
         if receiver_id in mia_member_id_set:
             return
@@ -346,7 +346,7 @@ async def recc_intercept(ctx, *, movie_query):
 
     raffle_role = ctx.guild.get_role(raffle_role_id)
     await ctx.author.remove_roles(raffle_role)
-    db.recomm_movie(ctx.author.id, movie_title)
+    await db.recomm_movie(ctx.author.id, movie_title)
 
 
 @bot.command()
@@ -354,12 +354,12 @@ async def setlb(ctx, lb_username):
     """
     Use !setlb followed by your Letterboxd username to link your Letterboxd profile. This is mandatory.
     """
-    user = db.get_user(ctx.author.id)
+    user = await db.get_user(ctx.author.id)
     if user is None:
-        db.add_user(ctx.author.id, lb_username, None)
+        await db.add_user(ctx.author.id, lb_username, None)
         await ctx.channel.send("Username set successfuly")
     else:
-        db.update_user(ctx.author.id, lb_username=lb_username)
+        await db.update_user(ctx.author.id, lb_username=lb_username)
         await ctx.channel.send("Username updated successfuly")
 
 
@@ -368,17 +368,17 @@ async def setnotes(ctx, *, note):
     """
     Use !setnotes followed by any preferences you may have (streaming services, preferred length, genre/mood, etc.) This is optional.
     """
-    user = db.get_user(ctx.author.id)
+    user = await db.get_user(ctx.author.id)
     if user is None:
-        db.add_user(ctx.author.id, None, note)
+        await db.add_user(ctx.author.id, None, note)
         await ctx.channel.send("Note set successfuly")
     else:
-        db.update_user(ctx.author.id, note=note)
+        await db.update_user(ctx.author.id, note=note)
         await ctx.channel.send("Note updated successfuly")
 
 
 async def main():
-    # await db.init()
+    await db.init()
     await bot.start(CONFIG["BOT"]["bot-token"])
 
 if __name__ == '__main__':
