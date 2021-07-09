@@ -34,13 +34,14 @@ class Database:
         if debug:
             engine_url = 'sqlite:///./test.db'
         # echo=True in the meanwhile for debugging
-        self.Engine = create_engine(engine_url, echo=False)
+        self.Engine = create_engine(engine_url, echo=True)
 
         Base.metadata.create_all(bind=self.Engine)
         self.Session = sessionmaker(bind=self.Engine)
 
     def add_user(self, user_id, lb_username=None, note=None):
         """Add new user to database"""
+        user_id = str(user_id)
         with self.Session() as session:
             user = User()
 
@@ -53,6 +54,7 @@ class Database:
 
     def update_user(self, user_id, *, lb_username=None, note=None):
         """Add new user to database"""
+        user_id = str(user_id)
         with self.Session() as session:
             user = session.query(User).filter_by(user_id=user_id).one_or_none()
             if lb_username != None:
@@ -62,11 +64,19 @@ class Database:
             session.commit()
 
     def get_user(self, user_id):
+        user_id = str(user_id)
         with self.Session() as session:
             return session.query(User).filter_by(user_id=user_id).one_or_none()
 
+    def add_raffle_entries(self, entries):
+        with self.Session() as session:
+            session.bulk_save_objects(entries)
+            session.commit()
+
     def add_raffle_entry(self, sender_id, receiver_id):
         """Add new raffle entry to database"""
+        sender_id = str(sender_id)
+        receiver_id = str(receiver_id)
         with self.Session() as session:
             raffle = Raffle()
 
@@ -78,6 +88,7 @@ class Database:
 
     # Update raffle entry with movie recommendation
     def recomm_movie(self, sender_id, recomm):
+        sender_id = str(sender_id)
         with self.Session() as session:
             result = session.query(Raffle).filter_by(sender_id=sender_id).one_or_none()
             result.recomm = recomm
@@ -92,12 +103,14 @@ class Database:
 
     # Get recommendation made BY a user
     def get_raffle_entry_by_sender(self, sender_id):
+        sender_id = str(sender_id)
         with self.Session() as session:
             result = session.query(Raffle).filter_by(sender_id=sender_id).one_or_none()
             return result
 
     # Get recommendation made TO a user
     def get_raffle_entry_by_receiver(self, receiver_id):
+        receiver_id = str(receiver_id)
         with self.Session() as session:
             result = session.query(Raffle).filter_by(
                 receiver_id=receiver_id).one_or_none()

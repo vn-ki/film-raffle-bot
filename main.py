@@ -8,7 +8,7 @@ from discord.ext import commands
 
 from config import CONFIG
 from lb_bot import get_movie_title
-from db import Database
+from db import Database, Raffle
 
 client = discord.Client()
 
@@ -17,7 +17,7 @@ db = Database(
     CONFIG["DATABASE"]["db-host"],
     CONFIG["DATABASE"]["db-username"],
     CONFIG["DATABASE"]["db-password"],
-    debug=True,
+    # debug=True,
 )
 
 
@@ -214,6 +214,8 @@ def only_in_raffle_channel():
         return ctx.channel.id == raffle_channel_id
     return commands.check(predicate)
 
+
+# TODO: use discord.py Cogs for these commands
 @bot.command(name='fr-start')
 @privileged()
 @only_in_raffle_channel()
@@ -236,7 +238,7 @@ async def raffle_start(ctx):
 @only_in_raffle_channel()
 async def roll_raffle(ctx):
     """
-    Roll the raffle.
+    Roll the raffle. **DANGER** This clears all existing raffle entries. Use `dump-reccs` first.
     """
     db.clear_raffle_db()
     guild = ctx.guild
@@ -250,7 +252,6 @@ async def roll_raffle(ctx):
     rando_list = bot.create_random_mapping(users)
 
     for pair in rando_list:
-        db.add_raffle_entry(pair[0].id, pair[1].id)
         # Doesn't ping users
         roll_msg += '{} -> {}\n'.format(pair[0].mention, pair[1].mention)
         # This length is due to Discord forbidding messages greater than 2k chars
@@ -260,6 +261,11 @@ async def roll_raffle(ctx):
 
     if len(roll_msg) > 0:
         await ctx.channel.send(roll_msg)
+
+    db.add_raffle_entries([
+        Raffle(sender_id=pair[0].id, receiver_id=pair[1].id, recomm=None)
+        for pair in rando_list
+    ])
     # TODO: Put chat in cfg
     await ctx.channel.send("That's all folks! If there's an issue contact the mods, otherwise have fun!")
     bot.raffle_rolled = True
@@ -301,6 +307,28 @@ async def dump_reccs(ctx):
     Pretty prints all the reccomendations till now.
     """
     await bot.send_all_reccs()
+
+
+@bot.command(name='warn-mia')
+@only_in_raffle_channel()
+@privileged()
+async def warn_mia(ctx):
+    """
+    Warn people who are MIA by pinging them.
+    """
+    # TODO: handle 2000 character limit
+    raffle_role = ctx.guild.get_role(raffle_role_id)
+    raffle_channel = self.get_channel(raffle_channel_id)
+    message = '**Please provide film raffle reccomendations to your raffle partner**\n\n'
+
+    for member in raffle_role.members:
+        message += f'{member.mention}\n'
+        if len(message) > 1950:
+            await raffle_channel.send(message)
+            message = ''
+    if len(message) > 0:
+        await raffle_channel.send(message)
+
 
 @bot.command(name='f', aliases=['film', 'kino'])
 @only_in_raffle_channel()
@@ -348,4 +376,18 @@ async def setnotes(ctx, *, note):
         db.update_user(ctx.author.id, note=note)
         await ctx.channel.send("Note updated successfuly")
 
-bot.run(CONFIG["BOT"]["bot-token"])
+
+async def main():
+    # await db.init()
+    await bot.start(CONFIG["BOT"]["bot-token"])
+
+if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        loop.run_until_complete(bot.close())
+        # cancel all tasks lingering
+    finally:
+        loop.close()
+# bot.run(CONFIG["BOT"]["bot-token"])
