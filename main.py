@@ -17,7 +17,7 @@ db = Database(
     CONFIG["DATABASE"]["db-host"],
     CONFIG["DATABASE"]["db-username"],
     CONFIG["DATABASE"]["db-password"],
-    # debug=True,
+    debug=True,
 )
 
 
