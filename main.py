@@ -1,3 +1,4 @@
+import asyncio
 import discord
 import logging
 import random
@@ -63,7 +64,7 @@ class MyClient(discord.Client):
                     found_user_in_priv = True
                     break
         if not found_user_in_priv:
-            await message.channel.send("You do not have the authority to do that.")
+            # await message.channel.send("You do not have the authority to do that.")
             return
         if message.content.startswith('!fr-start'):
             try:
@@ -71,13 +72,14 @@ class MyClient(discord.Client):
             except Exception as e:
                 await message.channel.send("Bot has errored. Contact bot admins.")
                 logging.exception("error with starting film raffle")
-
         elif message.content.startswith('!fr-roll'):
             try:
                 await self.roll_film_raffle(message)
             except Exception as e:
                 await message.channel.send("Bot has errored. Contact bot admins.")
                 logging.exception("error with rolling film raffle")
+        elif message.content.startswith('!dump-reccs'):
+            await self.send_all_reccs()
 
     async def start_film_raffle(self):
         """
@@ -89,7 +91,29 @@ class MyClient(discord.Client):
         await new_message.add_reaction(emoji=self.emoji_for_role)
         self.role_message_id = new_message.id
 
+    async def send_all_reccs(self):
+        raffle_channel = self.get_channel(CONFIG["GUILD"]["all-recs-channel-id"])
+        recs = db.get_all_reccs()
+        if len(recs) == 0:
+            return
+        roll_msg = ''
+        for rec in recs:
+            d_sender = self.get_user(int(rec.sender.user_id))
+            d_receiver = self.get_user(int(rec.receiver.user_id))
+            if d_sender == None or d_receiver == None:
+                logging.error("sender or receiver not found. this shouldnt happen really.")
+                continue
+
+            roll_msg += f'{d_sender.name} » {d_receiver.name} | {rec.recomm}\n'
+            if len(roll_msg) > 1950:
+                await raffle_channel.send(roll_msg)
+                roll_msg = ''
+
+        if len(roll_msg) > 0:
+            await raffle_channel.send(roll_msg)
+
     async def roll_film_raffle(self, message):
+        await self.send_all_reccs()
         db.empty_recomms()
         guild = message.guild
         await message.channel.send("The Senate knows what's best for you. :dewit:")
@@ -112,8 +136,8 @@ class MyClient(discord.Client):
         # TODO: Put chat in cfg
         await message.channel.send("That's all folks! If there's an issue contact the mods, otherwise have fun!")
 
-        for pair in rando_list:
-            await self.ping_user(guild, pair[0], pair[1])
+        ping_tasks = [self.ping_user(guild, pair[0], pair[1]) for pair in rando_list]
+        await asyncio.wait(ping_tasks)
 
     async def ping_user(self, guild, user1, user2):
         member = guild.get_member(user1.id)

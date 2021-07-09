@@ -20,9 +20,9 @@ class Raffle(Base):
     recomm = Column(Text, nullable=True)
 
     sender = relationship("User", foreign_keys=[
-                          sender_id], backref=backref("given_recomm", uselist=False))
+                          sender_id], backref=backref("given_recomm", uselist=False), lazy='subquery')
     receiver = relationship("User", foreign_keys=[receiver_id], backref=backref(
-        "received_recomm", uselist=False))
+        "received_recomm", uselist=False), lazy='subquery')
 
 
 class Database:
@@ -82,6 +82,12 @@ class Database:
             result.recomm = recomm
 
             session.commit()
+
+    # Get recommendation made BY a user
+    def get_all_reccs(self):
+        with self.Session() as session:
+            result = session.query(Raffle).all()
+            return result
 
     # Get recommendation made BY a user
     def get_recomm_by_sender(self, sender_id):
