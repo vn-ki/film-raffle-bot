@@ -3,6 +3,7 @@ import discord
 import logging
 import random
 import copy
+import re
 
 from discord.ext import commands
 
@@ -40,6 +41,18 @@ class MyClient(commands.Bot):
         if tasks:
             await asyncio.wait(tasks)
 
+    def prettyprint_movie(self, movie_title):
+        """
+        Converts movie title year to movie title (year)
+        """
+        split = movie_title.rsplit(' ', 1)
+        if len(split) < 2:
+            return movie_title
+        year = split[1]
+        if re.fullmatch(r'\d{4}', year):
+            return f'{split[0]} ({year})'
+        return movie_title
+
     async def send_all_reccs(self):
         raffle_channel = self.get_channel(
             CONFIG["GUILD"]["all-recs-channel-id"])
@@ -57,7 +70,9 @@ class MyClient(commands.Bot):
                     "sender or receiver not found. this shouldnt happen really.")
                 continue
 
-            roll_msg += f'{d_sender.name} » {d_receiver.name} | {rec.recomm}\n'
+            movie_title = self.prettyprint_movie(rec.recomm)
+
+            roll_msg += f'{d_sender.name} » {d_receiver.name} | {movie_title}\n'
             if len(roll_msg) > 1950:
                 await raffle_channel.send(roll_msg)
                 roll_msg = ''
@@ -88,7 +103,7 @@ The time has come! Please provide your recommendation in the r/Letterboxd server
                 message += f"**Additional notes: {lb_user2.note}**\n"
 
             if lb_user1 and lb_user1.lb_username and lb_user2.lb_username:
-                message += f'You can use lb-compare to quickly filter films you’ve seen that they haven’t: https://lb-compare.herokuapp.com/{lb_user1.lb_username}/vs/{lb_user2.lb_username} .'
+                message += f'You can use lb-compare to quickly filter films you’ve seen that they haven’t: https://lb-compare.herokuapp.com/{lb_user1.lb_username}/vs/{lb_user2.lb_username}'
             else:
                 message += '\n\nBe sure to add your letterboxd username using `!setlb` command.'
 
@@ -238,7 +253,7 @@ async def raffle_start(ctx):
 @only_in_raffle_channel()
 async def roll_raffle(ctx):
     """
-    Roll the raffle. **DANGER** This clears all existing raffle entries. Use `dump-reccs` first.
+    Roll the raffle. **DANGER** This clears all existing raffle entries. Use `dump-recs` first.
     """
     await db.clear_raffle_db()
     guild = ctx.guild
@@ -253,7 +268,7 @@ async def roll_raffle(ctx):
 
     for pair in rando_list:
         # Doesn't ping users
-        roll_msg += '{} -> {}\n'.format(pair[0].mention, pair[1].mention)
+        roll_msg += '{} » {}\n'.format(pair[0].mention, pair[1].mention)
         # This length is due to Discord forbidding messages greater than 2k chars
         if len(roll_msg) > 1950:
             await ctx.channel.send(roll_msg)
@@ -274,10 +289,13 @@ async def roll_raffle(ctx):
                   for pair in rando_list]
     await asyncio.wait(ping_tasks)
 
-@bot.command(name='fr-role-swap')
+@bot.command(name='fr-roleswap')
 @privileged()
 @only_in_raffle_channel()
 async def role_swap(ctx):
+    """
+    Removes the role from MIA person and assigns the role to their raffle partner if they are not MIA.
+    """
     guild = ctx.guild
     raffle_role = guild.get_role(raffle_role_id)
     mia_members = raffle_role.members
@@ -299,7 +317,7 @@ async def role_swap(ctx):
         await asyncio.wait(tasks)
     await bot.send_all_reccs()
 
-@bot.command(name='dump-reccs')
+@bot.command(name='dump-recs')
 @only_in_raffle_channel()
 @privileged()
 async def dump_reccs(ctx):
@@ -318,7 +336,7 @@ async def warn_mia(ctx):
     """
     # TODO: handle 2000 character limit
     raffle_role = ctx.guild.get_role(raffle_role_id)
-    raffle_channel = self.get_channel(raffle_channel_id)
+    raffle_channel = bot.get_channel(raffle_channel_id)
     message = '**Please provide film raffle reccomendations to your raffle partner**\n\n'
 
     for member in raffle_role.members:
