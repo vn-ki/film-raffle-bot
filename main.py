@@ -92,7 +92,7 @@ class MyClient(commands.Bot):
 __**Film Raffle Assignment**__
 The time has come! Please provide your recommendation in the r/Letterboxd server within 24 hours of this message.
 
-**You’ve been paired with:** {user2.mention}
+**You’ve been paired with:** {user2.mention} (if you cannot see the username check the pinned message in {raffle_channel.mention})
 """.lstrip()
         # XXX: What if the message goes past the 2000 char limit
         # TODO: Fix that
@@ -102,31 +102,43 @@ The time has come! Please provide your recommendation in the r/Letterboxd server
             if lb_user2.note:
                 message += f"**Additional notes: {lb_user2.note}**\n"
 
-            if lb_user1 and lb_user1.lb_username and lb_user2.lb_username:
-                message += f'You can use lb-compare to quickly filter films you’ve seen that they haven’t: https://lb-compare.herokuapp.com/{lb_user1.lb_username}/vs/{lb_user2.lb_username}'
+            if lb_user1 and lb_user1.lb_username:
+                if lb_user2.lb_username:
+                    message += f'You can use lb-compare to quickly filter films you’ve seen that they haven’t: https://lb-compare.herokuapp.com/{lb_user1.lb_username}/vs/{lb_user2.lb_username}\n'
             else:
-                message += '\n\nBe sure to add your letterboxd username using `!setlb` command.'
+                message += '\n**Be sure to add your letterboxd username using `!setlb` command.**\n'
 
-        message += f'\n\nTo submit your recommendation, head to the r/Letterboxd server {raffle_channel.mention} channel and use the `!f` command. Remember to tag your partner and let them know why you chose the film!'
+        message += f'\nTo submit your recommendation, head to the r/Letterboxd server {raffle_channel.mention} channel and use the `!f` command. Remember to tag your partner and let them know why you chose the film!'
 
         await user1.send(message)
 
     def create_random_mapping(self, users):
         """
         Creates a random mapping between users
+
+        This creates a ring of users. The algo does this by shuffling the user list
+        and adding an edge from ith user to i+1 th user if i!=n. For the last user, an edge
+        is added to the first user.
         """
         # users would be Discord usernames
         random.shuffle(users)
-        choose = copy.copy(users)
         randomized_list = []
-
-        for member in users:
-            members = copy.copy(users)
-            members.pop(members.index(member))
-            chosen = random.choice(list(set(choose) & set(members)))
-            randomized_list.append((member, chosen))
-            choose.pop(choose.index(chosen))
+        for i in range(len(users)-1):
+            randomized_list.append((users[i], users[i+1]))
+        randomized_list.append((users[-1], users[0]))
         return randomized_list
+
+    def raffle_entries_to_list(self, raffle_entries):
+        entry_map = {}
+        for entry in raffle_entries:
+            entry_map[entry.sender_id] = entry.receiver_id
+        first = raffle_entries[0].sender_id
+        lst = [first]
+        curr = entry_map[first]
+        while curr != first:
+            lst.append(curr)
+            curr = entry_map[curr]
+        return lst
 
     async def create_user_if_not_exist(self, user):
         dbuser = await db.get_user(user.id)
@@ -248,6 +260,20 @@ async def raffle_start(ctx):
     bot.raffle_rolled = False
 
 
+async def send_roll_msg(map_list, channel):
+    roll_msg = ''
+    for pair in map_list:
+        # Doesn't ping users
+        roll_msg += '{} » {}\n'.format(pair[0].mention, pair[1].mention)
+        # This length is due to Discord forbidding messages greater than 2k chars
+        if len(roll_msg) > 1950:
+            await channel.send(roll_msg)
+            roll_msg = ''
+
+    if len(roll_msg) > 0:
+        await channel.send(roll_msg)
+
+
 @bot.command(name='fr-roll')
 @privileged()
 @only_in_raffle_channel()
@@ -263,19 +289,8 @@ async def roll_raffle(ctx):
         await ctx.channel.send("Not enough users for rolling the raffle.")
         return
     await ctx.channel.send("The Senate knows what's best for you. :dewit:")
-    roll_msg = ''
     rando_list = bot.create_random_mapping(users)
-
-    for pair in rando_list:
-        # Doesn't ping users
-        roll_msg += '{} » {}\n'.format(pair[0].mention, pair[1].mention)
-        # This length is due to Discord forbidding messages greater than 2k chars
-        if len(roll_msg) > 1950:
-            await ctx.channel.send(roll_msg)
-            roll_msg = ''
-
-    if len(roll_msg) > 0:
-        await ctx.channel.send(roll_msg)
+    await send_roll_msg(rando_list, ctx.channel)
 
     await db.add_raffle_entries([
         Raffle(sender_id=str(pair[0].id), receiver_id=str(pair[1].id), recomm=None)
@@ -289,30 +304,72 @@ async def roll_raffle(ctx):
                   for pair in rando_list]
     await asyncio.wait(ping_tasks)
 
-@bot.command(name='fr-roleswap')
+
+def get_entry_map(raffle_entries):
+    entry_map = {}
+    for entry in raffle_entries:
+        entry_map[entry.sender_id] = entry.receiver_id
+    return entry_map
+
+@bot.command(name='fr-reroll')
 @privileged()
 @only_in_raffle_channel()
 async def role_swap(ctx):
     """
     Removes the role from MIA person and assigns the role to their raffle partner if they are not MIA.
     """
+    if not bot.raffle_rolled:
+        await ctx.channel.send("Cannot re-roll before rolling.")
+        return
     guild = ctx.guild
     raffle_role = guild.get_role(raffle_role_id)
     mia_members = raffle_role.members
-    mia_member_id_set = set([member.id for member in mia_members])
-    async def assign_remove_role(member):
-        await member.remove_roles(raffle_role)
-        raffle = await db.get_raffle_entry_by_sender(member.id)
-        receiver_id = int(raffle.receiver_id)
-        if receiver_id in mia_member_id_set:
-            return
-        receiver = guild.get_member(receiver_id)
-        if not receiver:
-            return
-        await receiver.add_roles(raffle_role)
+    mia_member_id_set = set([str(member.id) for member in mia_members])
 
-    tasks = [asyncio.create_task(assign_remove_role(member))
-             for member in mia_members]
+    raffle_entries = await db.get_all_reccs()
+    entry_map = get_entry_map(raffle_entries)
+    entry_list = bot.raffle_entries_to_list(raffle_entries)
+    await db.remove_all_raffle_entries_by_users([str(member.id) for member in mia_members])
+
+    new_entry_list = [uid for uid in entry_list if uid not in mia_member_id_set]
+    new_pairings = []
+    i = 0
+    tasks = []
+
+    for i in range(-1, len(new_entry_list)-1):
+        curr = new_entry_list[i]
+        next_ = new_entry_list[i+1]
+        if entry_map[curr] != next_:
+            tasks.append(asyncio.create_task(db.add_raffle_entry(curr, next_)))
+            new_pairings.append((ctx.guild.get_member(int(curr)), ctx.guild.get_member(int(next_))))
+    # if entry_map[new_entry_list[-1]] != new_entry_list[0]:
+    #     curr = new_entry_list[-1]
+    #     next_ = new_entry_list[0]
+    #     new_pairings.append((ctx.guild.get_member(int(curr)), ctx.guild.get_member(int(next_))))
+
+    # while i < len(entry_list):
+    #     if entry_list[i] not in mia_member_id_set:
+    #         continue
+    #     # XXX: if i = 0, then this will select the last user, which is the desired behavior
+    #     prev = entry_list[i-1]
+    #     while i < len(entry_list) and entry_list[i] in mia_member_id_set:
+    #         i += 1
+    #     # curr is the next user who is not mia
+    #     if i == len(entry_list):
+    #         curr = entry_list[0]
+    #     else:
+    #         curr = entry_list[i]
+    #     # add raffle role to the prev
+    #     # TODO: what if the prev user has left?
+    #     new_pairings.append((ctx.guild.get_member(int(prev)), ctx.guild.get_member(int(curr))))
+
+    for pair in new_pairings:
+        tasks.append(asyncio.create_task(pair[0].add_roles(raffle_role)))
+    if new_pairings:
+        await send_roll_msg(new_pairings, ctx.channel)
+    else:
+        await ctx.channel.send("No one to pair")
+
     if tasks:
         await asyncio.wait(tasks)
     await bot.send_all_reccs()
@@ -375,10 +432,10 @@ async def setlb(ctx, lb_username):
     user = await db.get_user(ctx.author.id)
     if user is None:
         await db.add_user(ctx.author.id, lb_username, None)
-        await ctx.channel.send("Username set successfuly")
+        await ctx.channel.send("Username set successfully")
     else:
         await db.update_user(ctx.author.id, lb_username=lb_username)
-        await ctx.channel.send("Username updated successfuly")
+        await ctx.channel.send("Username updated successfully")
 
 
 @bot.command()
@@ -389,10 +446,10 @@ async def setnotes(ctx, *, note):
     user = await db.get_user(ctx.author.id)
     if user is None:
         await db.add_user(ctx.author.id, None, note)
-        await ctx.channel.send("Note set successfuly")
+        await ctx.channel.send("Note set successfully")
     else:
         await db.update_user(ctx.author.id, note=note)
-        await ctx.channel.send("Note updated successfuly")
+        await ctx.channel.send("Note updated successfully")
 
 
 async def main():

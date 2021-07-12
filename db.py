@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Text, ForeignKey, select, insert, update, delete
+from sqlalchemy import create_engine, Column, Text, ForeignKey, select, insert, update, delete, or_
 from sqlalchemy.orm import relationship, backref, sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -123,6 +123,14 @@ class Database:
             result = await session.execute(select(Raffle).filter_by(
                 receiver_id=receiver_id))
             return result.scalar_one_or_none()
+
+    async def remove_all_raffle_entries_by_users(self, user_ids):
+        user_ids = [str(user_id) for user_id in user_ids]
+        async with self.Session() as session:
+            stmts = delete(Raffle).where(or_(Raffle.sender_id.in_(
+                user_ids), Raffle.receiver_id.in_(user_ids)))
+            await session.execute(stmts)
+            await session.commit()
 
     # Delete all recommendations
     async def clear_raffle_db(self):
