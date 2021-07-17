@@ -5,12 +5,15 @@ import random
 import copy
 import re
 import os
+import functools
 
 from discord.ext import commands
 
 from config import CONFIG
 from lb_bot import get_movie_title
 from db import Database, Raffle
+
+from commands.userdata import Userdata
 
 client = discord.Client()
 
@@ -222,6 +225,9 @@ bot = MyClient(raffle_channel_id, raffle_role_id, command_prefix='!', intents=in
 
 def privileged():
     async def predicate(ctx):
+        if ctx.guild == None:
+            return False
+
         found_user_in_priv = False
         for role in CONFIG["GUILD"]["privileged-roles"]:
             priv_role = ctx.guild.get_role(role)
@@ -237,6 +243,17 @@ def only_in_raffle_channel():
         return ctx.channel.id == raffle_channel_id
     return commands.check(predicate)
 
+
+def typing_indicator():
+    def wrapper(func):
+        @functools.wraps(func)
+        async def wrapped(ctx, *args):
+            async with ctx.typing():
+                return await func(ctx, *args)
+        return wrapped
+    return wrapper
+
+
 async def silent_pin_message(message: discord.Message):
     try:
         await message.pin()
@@ -248,6 +265,7 @@ async def silent_pin_message(message: discord.Message):
 @bot.command(name='fr-start')
 @privileged()
 @only_in_raffle_channel()
+@typing_indicator()
 async def raffle_start(ctx):
     """
     Starts the film raffle. Sends a message with a reaction to join.
@@ -338,7 +356,7 @@ def get_entry_map(raffle_entries):
 @bot.command(name='fr-reroll')
 @privileged()
 @only_in_raffle_channel()
-async def role_swap(ctx):
+async def reroll(ctx):
     """
     Removes the role from MIA person and assigns the role to their raffle partner if they are not MIA.
     """
@@ -382,6 +400,7 @@ async def role_swap(ctx):
 @bot.command(name='dump-recs')
 @only_in_raffle_channel()
 @privileged()
+@typing_indicator()
 async def dump_reccs(ctx):
     """
     Pretty prints all the reccomendations till now.
@@ -392,6 +411,7 @@ async def dump_reccs(ctx):
 @bot.command(name='warn-mia')
 @only_in_raffle_channel()
 @privileged()
+@typing_indicator()
 async def warn_mia(ctx):
     """
     Warn people who are MIA by pinging them.
@@ -429,33 +449,22 @@ async def recc_intercept(ctx, *, movie_query):
     await db.recomm_movie(ctx.author.id, movie_title)
 
 
-@bot.command()
-async def setlb(ctx, lb_username):
-    """
-    Use !setlb followed by your Letterboxd username to link your Letterboxd profile. This is mandatory.
-    """
-    user = await db.get_user(ctx.author.id)
-    if user is None:
-        await db.add_user(ctx.author.id, lb_username, None)
-        await ctx.channel.send("Username set successfully")
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.channel.send("Command is missing a required argument.")
+    elif isinstance(error, commands.CheckFailure):
+        logging.warn("Check failed.")
+    elif isinstance(error, commands.CommandNotFound):
+        return
+    elif isinstance(error, commands.CommandInvokeError):
+        await ctx.channel.send("Command crashed.")
+        raise error
     else:
-        await db.update_user(ctx.author.id, lb_username=lb_username)
-        await ctx.channel.send("Username updated successfully")
+        raise error
 
 
-@bot.command()
-async def setnotes(ctx, *, note):
-    """
-    Use !setnotes followed by any preferences you may have (streaming services, preferred length, genre/mood, etc.) This is optional.
-    """
-    user = await db.get_user(ctx.author.id)
-    if user is None:
-        await db.add_user(ctx.author.id, None, note)
-        await ctx.channel.send("Note set successfully")
-    else:
-        await db.update_user(ctx.author.id, note=note)
-        await ctx.channel.send("Note updated successfully")
-
+bot.add_cog(Userdata(db))
 
 async def main():
     await db.init()
