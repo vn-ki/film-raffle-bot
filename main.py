@@ -4,6 +4,7 @@ import logging
 import random
 import copy
 import re
+import os
 
 from discord.ext import commands
 
@@ -18,7 +19,7 @@ db = Database(
     CONFIG["DATABASE"]["db-host"],
     CONFIG["DATABASE"]["db-username"],
     CONFIG["DATABASE"]["db-password"],
-    # debug=True,
+    debug=os.getenv("DEBUG", False),
 )
 
 
@@ -187,11 +188,6 @@ The time has come! Please provide your recommendation in the r/Letterboxd server
         except discord.HTTPException:
             pass
 
-    def check_raffle_channel(self, payload) -> bool:
-        # TODO: sanitize the input??
-        # make the input id??
-        return payload.channel.id == self.raffle_channel_id
-
     def check_emoji_payload(self, payload: discord.RawReactionActionEvent) -> bool:
         """
         Check if emoji is the one we care about and all it's properties are correct.
@@ -241,6 +237,12 @@ def only_in_raffle_channel():
         return ctx.channel.id == raffle_channel_id
     return commands.check(predicate)
 
+async def silent_pin_message(message: discord.Message):
+    try:
+        await message.pin()
+    except discord.Forbidden:
+        logging.warn("don't have perms for pinning message")
+
 
 # TODO: use discord.py Cogs for these commands
 @bot.command(name='fr-start')
@@ -252,26 +254,45 @@ async def raffle_start(ctx):
     """
     # clear all existing ones
     await bot.clear_raffle_role(ctx.guild)
+    await unpin_all_bot_messages(ctx)
 
     raffle_channel = bot.get_channel(bot.raffle_channel_id)
-    new_message = await raffle_channel.send("React to me!")
+    emoji = bot.get_emoji(774310027472404490)
+    if not emoji:
+        emoji = ''
+    new_message = await raffle_channel.send(f"React to me! {emoji}")
     await new_message.add_reaction(emoji=bot.emoji_for_role)
+    await silent_pin_message(new_message)
     bot.role_message_id = new_message.id
     bot.raffle_rolled = False
 
 
 async def send_roll_msg(map_list, channel):
+    pin_tasks = []
     roll_msg = ''
     for pair in map_list:
         # Doesn't ping users
         roll_msg += '{} » {}\n'.format(pair[0].mention, pair[1].mention)
         # This length is due to Discord forbidding messages greater than 2k chars
         if len(roll_msg) > 1950:
-            await channel.send(roll_msg)
+            message = await channel.send(roll_msg)
+            pin_tasks.append(asyncio.create_task(silent_pin_message(message)))
             roll_msg = ''
 
     if len(roll_msg) > 0:
-        await channel.send(roll_msg)
+        message = await channel.send(roll_msg)
+        pin_tasks.append(asyncio.create_task(silent_pin_message(message)))
+    await asyncio.wait(pin_tasks)
+
+
+async def unpin_all_bot_messages(ctx):
+    pins = await ctx.channel.pins()
+    tasks = []
+    for message in pins:
+        if message.author == bot.user:
+            tasks.append(asyncio.create_task(message.unpin()))
+    if tasks:
+        await asyncio.wait(tasks)
 
 
 @bot.command(name='fr-roll')
@@ -288,7 +309,10 @@ async def roll_raffle(ctx):
     if len(users) < 2:
         await ctx.channel.send("Not enough users for rolling the raffle.")
         return
-    await ctx.channel.send("The Senate knows what's best for you. :dewit:")
+    emoji = bot.get_emoji(774310027359158273)
+    if not emoji:
+        emoji = ''
+    await ctx.channel.send(f"The Senate knows what's best for you. {emoji}")
     rando_list = bot.create_random_mapping(users)
     await send_roll_msg(rando_list, ctx.channel)
 
@@ -321,6 +345,7 @@ async def role_swap(ctx):
     if not bot.raffle_rolled:
         await ctx.channel.send("Cannot re-roll before rolling.")
         return
+
     guild = ctx.guild
     raffle_role = guild.get_role(raffle_role_id)
     mia_members = raffle_role.members
@@ -342,29 +367,10 @@ async def role_swap(ctx):
         if entry_map[curr] != next_:
             tasks.append(asyncio.create_task(db.add_raffle_entry(curr, next_)))
             new_pairings.append((ctx.guild.get_member(int(curr)), ctx.guild.get_member(int(next_))))
-    # if entry_map[new_entry_list[-1]] != new_entry_list[0]:
-    #     curr = new_entry_list[-1]
-    #     next_ = new_entry_list[0]
-    #     new_pairings.append((ctx.guild.get_member(int(curr)), ctx.guild.get_member(int(next_))))
-
-    # while i < len(entry_list):
-    #     if entry_list[i] not in mia_member_id_set:
-    #         continue
-    #     # XXX: if i = 0, then this will select the last user, which is the desired behavior
-    #     prev = entry_list[i-1]
-    #     while i < len(entry_list) and entry_list[i] in mia_member_id_set:
-    #         i += 1
-    #     # curr is the next user who is not mia
-    #     if i == len(entry_list):
-    #         curr = entry_list[0]
-    #     else:
-    #         curr = entry_list[i]
-    #     # add raffle role to the prev
-    #     # TODO: what if the prev user has left?
-    #     new_pairings.append((ctx.guild.get_member(int(prev)), ctx.guild.get_member(int(curr))))
 
     for pair in new_pairings:
         tasks.append(asyncio.create_task(pair[0].add_roles(raffle_role)))
+        tasks.append(asyncio.create_task(ping_user(guild, pair[0], pair[1])))
     if new_pairings:
         await send_roll_msg(new_pairings, ctx.channel)
     else:
@@ -372,7 +378,6 @@ async def role_swap(ctx):
 
     if tasks:
         await asyncio.wait(tasks)
-    await bot.send_all_reccs()
 
 @bot.command(name='dump-recs')
 @only_in_raffle_channel()
