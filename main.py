@@ -32,7 +32,7 @@ class MyClient(commands.Bot):
         self.raffle_role_id = raffle_role_id
         super().__init__(*args, **kwargs)
 
-        self.emoji_for_role = discord.PartialEmoji(name='🎞')
+        self.emoji_for_role = discord.PartialEmoji(name='🎟️')
         self.raffle_rolled = False
 
         # ID of the message that can be reacted to to add/remove a role.
@@ -275,10 +275,7 @@ async def raffle_start(ctx):
     await unpin_all_bot_messages(ctx)
 
     raffle_channel = bot.get_channel(bot.raffle_channel_id)
-    emoji = bot.get_emoji(774310027472404490)
-    if not emoji:
-        emoji = ''
-    new_message = await raffle_channel.send(f"React to me! {emoji}")
+    new_message = await raffle_channel.send(f"It's time to sign up for the r/Letterboxd Film Raffle! Want to participate in the next round (Monday, September 6th)? Simply react {bot.emoji_for_role} below to join! After you react, please double-check that you have the “Raffle Participant” role. If you don’t, please unreact and react again until you have the role. Please note that you must be able to provide a film recommendation within 24 hours of the raffle, which will occur on Monday, September 6th at 1pm UTC/GMT. Once you have received your film suggestion, we ask that you watch and review (even just a few thoughts) before the next raffle in two weeks' time.  Happy raffling!")
     await new_message.add_reaction(emoji=bot.emoji_for_role)
     await silent_pin_message(new_message)
     bot.role_message_id = new_message.id

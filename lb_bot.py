@@ -21,6 +21,8 @@ async def get_movie_title(query):
         split_q = keywords.split()[:-1]
         split_q.append(year)
         query = ' '.join(split_q)
+    # XXX: lb bot doesn't handle this case either, but once it does, we'll need to do it as well
+    # query = query.replace('/', ' ')
     async with aiohttp.ClientSession(loop=asyncio.get_event_loop()) as session:
         async with session.get(urljoin(LB_SEARCH_ENDPOINT, quote_plus(query))) as resp:
             if resp.status >= 400:
@@ -67,6 +69,6 @@ def __check_year(keywords):
 
 
 if __name__ == '__main__':
-    t = get_movie_title('hail ceasar')
+    t = get_movie_title('little forest summer/autumn')
     loop = asyncio.get_event_loop()
     r = loop.run_until_complete(t)
