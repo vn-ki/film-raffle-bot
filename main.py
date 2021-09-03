@@ -6,6 +6,7 @@ import copy
 import re
 import os
 import functools
+from datetime import datetime, timedelta, timezone
 
 from discord.ext import commands
 
@@ -274,8 +275,16 @@ async def raffle_start(ctx):
     await bot.clear_raffle_role(ctx.guild)
     await unpin_all_bot_messages(ctx)
 
+    guild = ctx.guild
+    raffle_role = guild.get_role(bot.raffle_role_id)
     raffle_channel = bot.get_channel(bot.raffle_channel_id)
-    new_message = await raffle_channel.send(f"It's time to sign up for the r/Letterboxd Film Raffle! Want to participate in the next round (Monday, September 6th)? Simply react {bot.emoji_for_role} below to join! After you react, please double-check that you have the “Raffle Participant” role. If you don’t, please unreact and react again until you have the role. Please note that you must be able to provide a film recommendation within 24 hours of the raffle, which will occur on Monday, September 6th at 1pm UTC/GMT. Once you have received your film suggestion, we ask that you watch and review (even just a few thoughts) before the next raffle in two weeks' time.  Happy raffling!")
+
+    today = datetime.now(timezone.utc)
+    coming_monday = today + timedelta(days=((7 + (0 - today.weekday())) % 7))
+    coming_monday = coming_monday.replace(hour=13, minute=0, second=0, microsecond=0)
+    timestamp = int(coming_monday.timestamp())
+
+    new_message = await raffle_channel.send(f"It's time to sign up for the r/Letterboxd Film Raffle! Want to participate in the next round (Monday, September 6th)? Simply react {bot.emoji_for_role} below to join! After you react, please double-check that you have the “{raffle_role}” role. If you don’t, please unreact and react again until you have the role. Please note that you must be able to provide a film recommendation within 24 hours of the raffle, which will occur on <t:{timestamp}>. Once you have received your film suggestion, we ask that you watch and review (even just a few thoughts) before the next raffle in two weeks' time.  Happy raffling!")
     await new_message.add_reaction(emoji=bot.emoji_for_role)
     await silent_pin_message(new_message)
     bot.role_message_id = new_message.id
