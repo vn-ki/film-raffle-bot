@@ -25,6 +25,7 @@ db = Database(
     CONFIG["DATABASE"]["db-password"],
     debug=os.getenv("DEBUG", False),
 )
+logger = logging.getLogger('raffle_bot')
 
 
 class MyClient(commands.Bot):
@@ -58,10 +59,10 @@ class MyClient(commands.Bot):
             return f'{split[0]} ({year})'
         return movie_title
 
-    async def send_all_reccs(self):
+    async def send_all_reccs(self, guild_id):
         raffle_channel = self.get_channel(
             CONFIG["GUILD"]["all-recs-channel-id"])
-        recs = await db.get_all_reccs()
+        recs = await db.get_all_reccs(guild_id)
         if len(recs) == 0:
             return
         roll_msg = ''
@@ -71,7 +72,7 @@ class MyClient(commands.Bot):
             d_sender = self.get_user(int(rec.sender.user_id))
             d_receiver = self.get_user(int(rec.receiver.user_id))
             if d_sender == None or d_receiver == None:
-                logging.error(
+                logger.error(
                     "sender or receiver not found. this shouldnt happen really.")
                 continue
 
@@ -149,67 +150,73 @@ The time has come! Please provide your recommendation in the r/Letterboxd server
         dbuser = await db.get_user(user.id)
         if dbuser is None:
             await db.add_user(user.id)
+        if dbuser is None or dbuser.lb_username is None:
             await user.send(CONFIG["CHAT"]["DM_INTRO"])
 
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
         """Gives a role based on a reaction emoji."""
-        if not self.check_emoji_payload(payload):
+        if not await self.check_emoji_payload(payload):
             return
 
         guild = self.get_guild(payload.guild_id)
 
         role = guild.get_role(self.raffle_role_id)
         if role is None:
-            logging.error("could not find role to add")
+            logger.error("could not find role to add")
             return
         await self.create_user_if_not_exist(payload.member)
         try:
             await payload.member.add_roles(role)
+            logger.info(f'role assigned to {payload.member.name}')
         except discord.HTTPException:
-            logging.error("error while adding role")
+            logger.error("error while adding role")
             raise
 
     async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
         """
         Removes a role based on a reaction emoji.
         """
-        if not self.check_emoji_payload(payload):
+        if not await self.check_emoji_payload(payload):
             return
 
         guild = self.get_guild(payload.guild_id)
         role = guild.get_role(self.raffle_role_id)
         if role is None:
-            logging.error("role is not defined")
+            logger.error("role is not defined")
             return
 
         member = guild.get_member(payload.user_id)
         if member is None:
-            logging.warning(f"member of id '{payload.user_id}' not found")
+            logger.warning(f"member of id '{payload.user_id}' not found")
             return False
 
         try:
             await member.remove_roles(role)
+            logger.info(f'role removed from {member.name}')
         except discord.HTTPException:
             pass
 
-    def check_emoji_payload(self, payload: discord.RawReactionActionEvent) -> bool:
+    async def check_emoji_payload(self, payload: discord.RawReactionActionEvent) -> bool:
         """
         Check if emoji is the one we care about and all it's properties are correct.
         """
+        db_guild = await db.get_guild(payload.guild_id)
+        logger.info(f'got emoji payload: db_guild={db_guild}')
         # only care about the message
-        if payload.message_id != self.role_message_id:
+        if payload.message_id != int(db_guild.raffle_message_id):
+            logger.info(f'payload message id={payload.message_id} does not match raffle_message_id={db_guild.raffle_message_id}')
             return False
         # dont add role to the bot
         if payload.member == self.user:
             return False
 
         if payload.emoji != self.emoji_for_role:
-            logging.warning(f"payload emoji does not match: {payload.emoji}")
+            logger.warning(f"payload emoji does not match: {payload.emoji}")
             return False
 
         guild = self.get_guild(payload.guild_id)
         if guild is None:
-            logging.error("guild of f{payload.guild_id} not found")
+            logger.error("guild of f{payload.guild_id} not found")
             return False
 
         return True
@@ -259,7 +266,7 @@ async def silent_pin_message(message: discord.Message):
     try:
         await message.pin()
     except discord.Forbidden:
-        logging.warn("don't have perms for pinning message")
+        logger.warn("don't have perms for pinning message")
 
 
 # TODO: use discord.py Cogs for these commands
@@ -271,6 +278,8 @@ async def raffle_start(ctx):
     """
     Starts the film raffle. Sends a message with a reaction to join.
     """
+    await add_guild_if_not_exists(ctx.guild.id)
+    await db.guild_set_raffle_rolled(ctx.guild.id, False)
     # clear all existing ones
     await bot.clear_raffle_role(ctx.guild)
     await unpin_all_bot_messages(ctx)
@@ -288,9 +297,13 @@ async def raffle_start(ctx):
 Want to participate in the next round? Simply react {bot.emoji_for_role} below to join! After you react, please double-check that you have the “{raffle_role.mention}” role. If you don’t, please unreact and react again until you have the role. Please note that you must be able to provide a film recommendation within 24 hours of the raffle, which will occur on **<t:{coming_monday_timestamp}:F>**. Once you have received your film suggestion, we ask that you watch and review (even just a few thoughts) before the next raffle in two weeks' time. Keep an eye out for a DM for more info. Happy raffling!""")
     await new_message.add_reaction(emoji=bot.emoji_for_role)
     await silent_pin_message(new_message)
-    bot.role_message_id = new_message.id
-    bot.raffle_rolled = False
+    await db.start_raffle(guild.id, new_message.id)
 
+
+async def add_guild_if_not_exists(guild_id):
+    guild = await db.get_guild(guild_id)
+    if guild is None:
+        await db.add_guild(guild_id)
 
 async def send_roll_msg(map_list, channel):
     pin_tasks = []
@@ -327,13 +340,14 @@ async def roll_raffle(ctx):
     """
     Roll the raffle. **DANGER** This clears all existing raffle entries. Use `dump-recs` first.
     """
-    await db.clear_raffle_db()
     guild = ctx.guild
     raffle_role = guild.get_role(bot.raffle_role_id)
     users = [member for member in raffle_role.members if not member.bot]
     if len(users) < 2:
         await ctx.channel.send("Not enough users for rolling the raffle.")
         return
+
+    await db.clear_raffle_db(guild.id)
     emoji = bot.get_emoji(774310027359158273)
     if not emoji:
         emoji = ''
@@ -342,12 +356,14 @@ async def roll_raffle(ctx):
     await send_roll_msg(rando_list, ctx.channel)
 
     await db.add_raffle_entries([
-        Raffle(sender_id=str(pair[0].id), receiver_id=str(pair[1].id), recomm=None)
+        Raffle(guild_id=str(guild.id), sender_id=str(pair[0].id), receiver_id=str(pair[1].id), recomm=None)
         for pair in rando_list
     ])
     # TODO: Put chat in cfg
     await ctx.channel.send("That's all folks! If there's an issue contact the mods, otherwise have fun!")
-    bot.raffle_rolled = True
+
+    await db.guild_set_raffle_rolled(guild.id, True)
+    await db.guild_remove_raffle_message_id(guild.id)
 
     ping_tasks = [bot.ping_user(guild, pair[0], pair[1])
                   for pair in rando_list]
@@ -367,7 +383,7 @@ async def reroll(ctx):
     """
     Removes the role from MIA person and assigns the role to their raffle partner if they are not MIA.
     """
-    if not bot.raffle_rolled:
+    if not (await db.get_guild(ctx.guild.id)).raffle_rolled:
         await ctx.channel.send("Cannot re-roll before rolling.")
         return
 
@@ -376,10 +392,10 @@ async def reroll(ctx):
     mia_members = raffle_role.members
     mia_member_id_set = set([str(member.id) for member in mia_members])
 
-    raffle_entries = await db.get_all_reccs()
+    raffle_entries = await db.get_all_reccs(guild.id)
     entry_map = get_entry_map(raffle_entries)
     entry_list = bot.raffle_entries_to_list(raffle_entries)
-    await db.remove_all_raffle_entries_by_users([str(member.id) for member in mia_members])
+    await db.remove_all_raffle_entries_by_users(guild.id, [str(member.id) for member in mia_members])
 
     new_entry_list = [uid for uid in entry_list if uid not in mia_member_id_set]
     new_pairings = []
@@ -390,7 +406,7 @@ async def reroll(ctx):
         curr = new_entry_list[i]
         next_ = new_entry_list[i+1]
         if entry_map[curr] != next_:
-            tasks.append(asyncio.create_task(db.add_raffle_entry(curr, next_)))
+            tasks.append(asyncio.create_task(db.add_raffle_entry(guild.id, curr, next_)))
             new_pairings.append((ctx.guild.get_member(int(curr)), ctx.guild.get_member(int(next_))))
 
     for pair in new_pairings:
@@ -412,7 +428,7 @@ async def dump_reccs(ctx):
     """
     Pretty prints all the reccomendations till now.
     """
-    await bot.send_all_reccs()
+    await bot.send_all_reccs(ctx.guild.id)
 
 
 @bot.command(name='warn-mia')
@@ -440,20 +456,20 @@ async def warn_mia(ctx):
 @bot.command(name='f', aliases=['film', 'kino'])
 @only_in_raffle_channel()
 async def recc_intercept(ctx, *, movie_query):
-    if not bot.raffle_rolled:
+    if not (await db.get_guild(ctx.guild.id)).raffle_rolled:
         return
     movie_title = ''
     try:
         movie_title = await get_movie_title(movie_query)
     except Exception as e:
-        logging.error(f"error occured while getting '{movie_query}'")
+        logger.error(f"error occured while getting '{movie_query}'")
 
     if movie_title == '':
         movie_title = movie_query
 
     raffle_role = ctx.guild.get_role(raffle_role_id)
     await ctx.author.remove_roles(raffle_role)
-    await db.recomm_movie(ctx.author.id, movie_title)
+    await db.recomm_movie(ctx.guild.id, ctx.author.id, movie_title)
 
 
 @bot.event
@@ -461,7 +477,7 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.MissingRequiredArgument):
         await ctx.channel.send("Command is missing a required argument.")
     elif isinstance(error, commands.CheckFailure):
-        logging.warn("Check failed.")
+        logger.warn("Check failed.")
     elif isinstance(error, commands.CommandNotFound):
         return
     elif isinstance(error, commands.CommandInvokeError):
@@ -478,6 +494,18 @@ async def main():
     await bot.start(CONFIG["BOT"]["bot-token"])
 
 if __name__ == '__main__':
+    formatter = logging.Formatter('%(asctime)s %(levelname)s %(name)s %(message)s')
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(formatter)
+
+    root = logging.getLogger('raffle_bot')
+    root.setLevel(os.environ.get("LOGLEVEL", "DEBUG"))
+    root.addHandler(handler)
+    sqla = logging.getLogger('sqlalchemy.engine.Engine')
+    sqla.setLevel("INFO")
+    sqla.addHandler(handler)
+
     loop = asyncio.get_event_loop()
     try:
         loop.run_until_complete(main())
