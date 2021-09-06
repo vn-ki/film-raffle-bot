@@ -18,7 +18,7 @@ async def get_movie_title(query):
         # XXX: if year is in brackets, the LB search returns wrong results
         # so if anyone uses brackets, we just simply append the year onto the original
         # query without any brackets
-        split_q = keywords.split()[:-1]
+        split_q = query.split()[:-1]
         split_q.append(year)
         query = ' '.join(split_q)
     # XXX: lb bot doesn't handle this case either, but once it does, we'll need to do it as well
@@ -69,6 +69,7 @@ def __check_year(keywords):
 
 
 if __name__ == '__main__':
-    t = get_movie_title('little forest summer/autumn')
+    # t = get_movie_title('little forest summer/autumn')
+    t = get_movie_title('young mr. Lincoln')
     loop = asyncio.get_event_loop()
     r = loop.run_until_complete(t)
