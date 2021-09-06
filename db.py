@@ -181,18 +181,20 @@ class Database:
             return result.scalars().all()
 
     # Get recommendation made BY a user
-    async def get_raffle_entry_by_sender(self, sender_id):
+    async def get_raffle_entry_by_sender(self, guild_id, sender_id):
+        guild_id = str(guild_id)
         sender_id = str(sender_id)
         async with self.Session() as session:
-            result = await session.execute(select(Raffle).filter_by(
+            result = await session.execute(select(Raffle).filter_by(guild_id=guild_id).filter_by(
                 sender_id=sender_id))
             return result.scalar_one_or_none()
 
     # Get recommendation made TO a user
-    async def get_raffle_entry_by_receiver(self, receiver_id):
+    async def get_raffle_entry_by_receiver(self, guild_id, receiver_id):
+        guild_id = str(guild_id)
         receiver_id = str(receiver_id)
         async with self.Session() as session:
-            result = await session.execute(select(Raffle).filter_by(
+            result = await session.execute(select(Raffle).filter_by(guild_id=guild_id).filter_by(
                 receiver_id=receiver_id))
             return result.scalar_one_or_none()
 

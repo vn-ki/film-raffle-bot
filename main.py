@@ -459,6 +459,7 @@ async def recc_intercept(ctx, *, movie_query):
     if not (await db.get_guild(ctx.guild.id)).raffle_rolled:
         return
     movie_title = ''
+    raffle_channel = bot.get_channel(raffle_channel_id)
     try:
         movie_title = await get_movie_title(movie_query)
     except Exception as e:
@@ -470,6 +471,10 @@ async def recc_intercept(ctx, *, movie_query):
     raffle_role = ctx.guild.get_role(raffle_role_id)
     await ctx.author.remove_roles(raffle_role)
     await db.recomm_movie(ctx.guild.id, ctx.author.id, movie_title)
+    raffle_entry = await db.get_raffle_entry_by_sender(ctx.guild.id, ctx.author.id)
+    sender = bot.get_user(int(raffle_entry.sender_id))
+    receiver = bot.get_user(int(raffle_entry.receiver_id))
+    await raffle_channel.send(f'{sender.mention} reccomended {receiver.mention} "{movie_title}"')
 
 
 @bot.event
