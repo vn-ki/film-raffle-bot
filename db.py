@@ -180,6 +180,12 @@ class Database:
             result = await session.execute(select(Raffle).filter_by(guild_id=guild_id))
             return result.scalars().all()
 
+    async def get_mia(self, guild_id):
+        guild_id = str(guild_id)
+        async with self.Session() as session:
+            result = await session.execute(select(Raffle).filter_by(guild_id=guild_id).filter_by(recomm=None))
+            return result.scalars().all()
+
     # Get recommendation made BY a user
     async def get_raffle_entry_by_sender(self, guild_id, sender_id):
         guild_id = str(guild_id)

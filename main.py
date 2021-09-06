@@ -202,6 +202,9 @@ The time has come! Please provide your recommendation in the r/Letterboxd server
         """
         db_guild = await db.get_guild(payload.guild_id)
         logger.info(f'got emoji payload: db_guild={db_guild}')
+        if db_guild.raffle_message_id is None:
+            logger.info(f'guild={payload.guild_id} no raffle message_id')
+            return
         # only care about the message
         if payload.message_id != int(db_guild.raffle_message_id):
             logger.info(f'payload message id={payload.message_id} does not match raffle_message_id={db_guild.raffle_message_id}')
@@ -309,7 +312,17 @@ async def send_roll_msg(map_list, channel):
     pin_tasks = []
     roll_msg = ''
     for pair in map_list:
-        # Doesn't ping users
+        if pair[0] is None or pair[1] is None:
+            # XXX: this is a hack :'
+            logger.error(f'pair[0]={pair[0]} pair[1]={pair[1]}')
+            user = None
+            if pair[0]:
+                user = pair[0].mention
+            if pair[1]:
+                user = pair[1].mention
+            # one of the user couldnt be found, because they probably left he server
+            roll_msg += '{user} could not be matched because "reasons". Contact the bot admin and threat him to write better code.'
+            continue
         roll_msg += '{} » {}\n'.format(pair[0].mention, pair[1].mention)
         # This length is due to Discord forbidding messages greater than 2k chars
         if len(roll_msg) > 1950:
@@ -389,13 +402,22 @@ async def reroll(ctx):
 
     guild = ctx.guild
     raffle_role = guild.get_role(raffle_role_id)
-    mia_members = raffle_role.members
-    mia_member_id_set = set([str(member.id) for member in mia_members])
+    # mia_members = raffle_role.members
+    mia_members = await db.get_mia(guild.id)
+    mia_member_id_set = set([str(member.sender_id) for member in mia_members])
 
     raffle_entries = await db.get_all_reccs(guild.id)
+    for entry in raffle_entries:
+        if ctx.guild.get_member(int(entry.sender_id)) is None:
+            mia_member_id_set.add(str(entry.sender_id))
+
+    if len(raffle_entries) - len(mia_member_id_set) < 2:
+        await ctx.channel.send("Too few people to re-roll.")
+        return
+
     entry_map = get_entry_map(raffle_entries)
     entry_list = bot.raffle_entries_to_list(raffle_entries)
-    await db.remove_all_raffle_entries_by_users(guild.id, [str(member.id) for member in mia_members])
+    await db.remove_all_raffle_entries_by_users(guild.id, [member for member in mia_member_id_set])
 
     new_entry_list = [uid for uid in entry_list if uid not in mia_member_id_set]
     new_pairings = []
@@ -411,7 +433,7 @@ async def reroll(ctx):
 
     for pair in new_pairings:
         tasks.append(asyncio.create_task(pair[0].add_roles(raffle_role)))
-        tasks.append(asyncio.create_task(ping_user(guild, pair[0], pair[1])))
+        tasks.append(asyncio.create_task(bot.ping_user(guild, pair[0], pair[1])))
     if new_pairings:
         await send_roll_msg(new_pairings, ctx.channel)
     else:
@@ -472,8 +494,11 @@ async def recc_intercept(ctx, *, movie_query):
     await ctx.author.remove_roles(raffle_role)
     await db.recomm_movie(ctx.guild.id, ctx.author.id, movie_title)
     raffle_entry = await db.get_raffle_entry_by_sender(ctx.guild.id, ctx.author.id)
-    sender = bot.get_user(int(raffle_entry.sender_id))
-    receiver = bot.get_user(int(raffle_entry.receiver_id))
+    sender = ctx.guild.get_member(int(raffle_entry.sender_id))
+    receiver = ctx.guild.get_member(int(raffle_entry.receiver_id))
+    if receiver is None:
+        await raffle_channel.send(f"Your raffle partner seems to have left the server. Guess they don't like you. Don't worry, I do :). So sit tight and wait for the re-rolling tomorrow.")
+        return
     await raffle_channel.send(f'{sender.mention} reccomended {receiver.mention} "{movie_title}"')
 
 
