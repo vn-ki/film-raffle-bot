@@ -78,7 +78,13 @@ class MyClient(commands.Bot):
 
             movie_title = self.prettyprint_movie(rec.recomm)
 
-            roll_msg += f'{d_sender.name} » {d_receiver.name} | {movie_title}\n'
+            sender_name = d_sender.name
+            if rec.sender.lb_username:
+                sender_name += f' ({rec.sender.lb_username})'
+            receiver_name = d_receiver.name
+            if rec.receiver.lb_username:
+                receiver_name += f' ({rec.receiver.lb_username})'
+            roll_msg += f'{sender_name} » {receiver_name} | {movie_title}\n'
             if len(roll_msg) > 1950:
                 await raffle_channel.send(roll_msg)
                 roll_msg = ''
@@ -254,6 +260,10 @@ def only_in_raffle_channel():
         return ctx.channel.id == raffle_channel_id
     return commands.check(predicate)
 
+def only_in_debug_channel():
+    async def predicate(ctx):
+        return ctx.channel.id == CONFIG["GUILD"].get("debug-channel-id")
+    return commands.check(predicate)
 
 def typing_indicator():
     def wrapper(func):
@@ -388,6 +398,27 @@ def get_entry_map(raffle_entries):
     for entry in raffle_entries:
         entry_map[entry.sender_id] = entry.receiver_id
     return entry_map
+
+
+@bot.command(name='debug')
+@privileged()
+@only_in_debug_channel()
+async def debug(ctx):
+    guild = ctx.guild
+
+    raffle_role = guild.get_role(raffle_role_id)
+    # mia_members = raffle_role.members
+    mia_members = await db.get_mia(guild.id)
+    mia_member_id_set = set([str(member.sender_id) for member in mia_members])
+    logger.info(f'mia_member_id_set={mia_member_id_set}')
+
+    raffle_entries = await db.get_all_reccs(guild.id)
+    for entry in raffle_entries:
+        if ctx.guild.get_member(int(entry.sender_id)) is None:
+            logger.info(f'user with id={entry.sender_id} left the server')
+            mia_member_id_set.add(str(entry.sender_id))
+    logger.info(f'final mia_member_id_set={mia_member_id_set}')
+
 
 @bot.command(name='fr-reroll')
 @privileged()
