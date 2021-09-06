@@ -7,6 +7,7 @@ import re
 import os
 import functools
 from datetime import datetime, timedelta, timezone
+from io import StringIO
 
 from discord.ext import commands
 
@@ -89,8 +90,9 @@ class MyClient(commands.Bot):
                 await raffle_channel.send(roll_msg)
                 roll_msg = ''
 
-        if len(roll_msg) > 0:
-            await raffle_channel.send(roll_msg)
+        await raffle_channel.send("", file=discord.File(StringIO(roll_msg), "recs.txt"))
+        # if len(roll_msg) > 0:
+        #     await raffle_channel.send(roll_msg)
 
     async def ping_user(self, guild, user1, user2):
         member = guild.get_member(user1.id)
@@ -479,7 +481,7 @@ async def reroll(ctx):
 @typing_indicator()
 async def dump_reccs(ctx):
     """
-    Pretty prints all the reccomendations till now.
+    Pretty prints all the recommendations till now.
     """
     await bot.send_all_reccs(ctx.guild.id)
 
@@ -495,7 +497,7 @@ async def warn_mia(ctx):
     # TODO: handle 2000 character limit
     raffle_role = ctx.guild.get_role(raffle_role_id)
     raffle_channel = bot.get_channel(raffle_channel_id)
-    message = '**Please provide film raffle reccomendations to your raffle partner**\n\n'
+    message = '**Please provide film raffle recommendations to your raffle partner**\n\n'
 
     for member in raffle_role.members:
         message += f'{member.mention}\n'
@@ -530,7 +532,7 @@ async def recc_intercept(ctx, *, movie_query):
     if receiver is None:
         await raffle_channel.send(f"Your raffle partner seems to have left the server. Guess they don't like you. Don't worry, I do :). So sit tight and wait for the re-rolling tomorrow.")
         return
-    await raffle_channel.send(f'{sender.mention} reccomended {receiver.mention} "{movie_title}"')
+    await raffle_channel.send(f'{sender.mention} recommended {receiver.mention} "{movie_title}"')
 
 
 @bot.event
