@@ -86,9 +86,9 @@ class MyClient(commands.Bot):
             if rec.receiver.lb_username:
                 receiver_name += f' ({rec.receiver.lb_username})'
             roll_msg += f'{sender_name} » {receiver_name} | {movie_title}\n'
-            if len(roll_msg) > 1950:
-                await raffle_channel.send(roll_msg)
-                roll_msg = ''
+            # if len(roll_msg) > 1950:
+            #     await raffle_channel.send(roll_msg)
+            #     roll_msg = ''
 
         await raffle_channel.send("", file=discord.File(StringIO(roll_msg), "recs.txt"))
         # if len(roll_msg) > 0:
