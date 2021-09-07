@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from re import fullmatch
 
 import requests
@@ -8,8 +9,21 @@ import aiohttp
 
 from urllib.parse import urljoin, quote_plus
 
+logger = logging.getLogger('raffle_bot.db')
 
 LB_SEARCH_ENDPOINT = 'https://letterboxd.com/search/films/'
+
+def prettyprint_movie(movie_title):
+    """
+    Converts movie title year to movie title (year)
+    """
+    split = movie_title.rsplit(' ', 1)
+    if len(split) < 2:
+        return movie_title
+    year = split[1]
+    if re.fullmatch(r'\d{4}', year):
+        return f'{split[0]} ({year})'
+    return movie_title
 
 
 async def get_movie_title(query):
@@ -23,6 +37,7 @@ async def get_movie_title(query):
         query = ' '.join(split_q)
     # XXX: lb bot doesn't handle this case either, but once it does, we'll need to do it as well
     # query = query.replace('/', ' ')
+    query = query.replace('.', ' ')
     async with aiohttp.ClientSession(loop=asyncio.get_event_loop()) as session:
         async with session.get(urljoin(LB_SEARCH_ENDPOINT, quote_plus(query))) as resp:
             if resp.status >= 400:
@@ -30,9 +45,8 @@ async def get_movie_title(query):
             soup = BeautifulSoup(await resp.text(), features="html.parser")
             title = soup.select_one('ul.results > li').select_one(
                 'span.film-title-wrapper > a').text
-            logging.debug(title)
-            logging.info(f"got title '{title}' for query '{query}'")
-            return title
+            logger.info(f"got title '{title}' for query '{query}'")
+            return prettyprint_movie(title)
     return ''
 
 

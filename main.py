@@ -48,55 +48,6 @@ class MyClient(commands.Bot):
         if tasks:
             await asyncio.wait(tasks)
 
-    def prettyprint_movie(self, movie_title):
-        """
-        Converts movie title year to movie title (year)
-        """
-        split = movie_title.rsplit(' ', 1)
-        if len(split) < 2:
-            return movie_title
-        year = split[1]
-        if re.fullmatch(r'\d{4}', year):
-            return f'{split[0]} ({year})'
-        return movie_title
-
-    async def send_all_reccs(self, guild_id):
-        raffle_channel = self.get_channel(
-            CONFIG["GUILD"]["all-recs-channel-id"])
-        recs = await db.get_all_reccs(guild_id)
-        if len(recs) == 0:
-            return
-        roll_msg = ''
-        recs = self.raffle_entries_to_orig_entry_list(recs)
-        logger.info(f'send_all_reccs: recs={recs}')
-        for rec in recs:
-            if rec.recomm == None:
-                logger.info('no reccom found so skipping')
-                continue
-            d_sender = self.get_user(int(rec.sender.user_id))
-            d_receiver = self.get_user(int(rec.receiver.user_id))
-            if d_sender == None or d_receiver == None:
-                logger.error(
-                    "sender or receiver not found. this shouldnt happen really.")
-                continue
-
-            movie_title = self.prettyprint_movie(rec.recomm)
-
-            sender_name = d_sender.name
-            if rec.sender.lb_username:
-                sender_name += f' ({rec.sender.lb_username})'
-            receiver_name = d_receiver.name
-            if rec.receiver.lb_username:
-                receiver_name += f' ({rec.receiver.lb_username})'
-            roll_msg += f'{sender_name} » {receiver_name} | {movie_title}\n'
-            # if len(roll_msg) > 1950:
-            #     await raffle_channel.send(roll_msg)
-            #     roll_msg = ''
-
-        await raffle_channel.send("", file=discord.File(StringIO(roll_msg), "recs.txt"))
-        # if len(roll_msg) > 0:
-        #     await raffle_channel.send(roll_msg)
-
     async def ping_user(self, guild, user1, user2):
         member = guild.get_member(user1.id)
         raffle_channel = guild.get_channel(self.raffle_channel_id)
@@ -439,6 +390,14 @@ async def debug(ctx):
             mia_member_id_set.add(str(entry.sender_id))
     logger.info(f'final mia_member_id_set={mia_member_id_set}')
 
+    message = 'MIA\n'
+    for mia in mia_member_id_set:
+        try:
+            user = await bot.fetch_user(mia)
+        except discord.NotFound:
+            continue
+        message += f'{user.name}\n'
+    await ctx.channel.send(message)
 
 @bot.command(name='fr-reroll')
 @privileged()
@@ -501,7 +460,34 @@ async def dump_reccs(ctx):
     """
     Pretty prints all the recommendations till now.
     """
-    await bot.send_all_reccs(ctx.guild.id)
+    recs = await db.get_all_reccs(ctx.guild.id)
+    if len(recs) == 0:
+        return
+    roll_msg = ''
+    recs = bot.raffle_entries_to_orig_entry_list(recs)
+    logger.info(f'dump-recs: recs={recs}')
+    for rec in recs:
+        if rec.recomm == None:
+            logger.info('no reccom found so skipping')
+            continue
+
+        d_sender = bot.get_user(int(rec.sender.user_id))
+        d_receiver = bot.get_user(int(rec.receiver.user_id))
+        if d_sender == None or d_receiver == None:
+            logger.error("sender or receiver not found. this shouldnt happen really.")
+            continue
+
+        movie_title = rec.recomm
+
+        sender_name = d_sender.name
+        if rec.sender.lb_username:
+            sender_name += f' ({rec.sender.lb_username})'
+        receiver_name = d_receiver.name
+        if rec.receiver.lb_username:
+            receiver_name += f' ({rec.receiver.lb_username})'
+        roll_msg += f'{sender_name} » {receiver_name} | {movie_title}\n'
+
+    await ctx.channel.send("", file=discord.File(StringIO(roll_msg), "recs.txt"))
 
 
 @bot.command(name='warn-mia')
