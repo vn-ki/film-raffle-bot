@@ -68,6 +68,7 @@ class MyClient(commands.Bot):
             return
         roll_msg = ''
         recs = self.raffle_entries_to_orig_entry_list(recs)
+        logger.info('send_all_reccs: recs={recs}')
         for rec in recs:
             if rec.recomm == None:
                 continue
@@ -166,7 +167,6 @@ The time has come! Please provide your recommendation in the r/Letterboxd server
         lst = [lookup[first]]
         curr = entry_map[first]
         while curr != first:
-            logger.info(f'curr={curr} first={first}')
             lst.append(lookup[curr])
             curr = entry_map[curr]
         return lst
