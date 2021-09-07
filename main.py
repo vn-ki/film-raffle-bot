@@ -67,6 +67,7 @@ class MyClient(commands.Bot):
         if len(recs) == 0:
             return
         roll_msg = ''
+        recs = self.raffle_entries_to_list(recs)
         for rec in recs:
             if rec.recomm == None:
                 continue
@@ -476,7 +477,7 @@ async def reroll(ctx):
         await asyncio.wait(tasks)
 
 @bot.command(name='dump-recs')
-@only_in_raffle_channel()
+@only_in_debug_channel()
 @privileged()
 @typing_indicator()
 async def dump_reccs(ctx):
