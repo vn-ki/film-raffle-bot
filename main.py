@@ -67,7 +67,7 @@ class MyClient(commands.Bot):
         if len(recs) == 0:
             return
         roll_msg = ''
-        recs = self.raffle_entries_to_list(recs)
+        recs = self.raffle_entries_to_orig_entry_list(recs)
         for rec in recs:
             if rec.recomm == None:
                 continue
@@ -152,6 +152,21 @@ The time has come! Please provide your recommendation in the r/Letterboxd server
         curr = entry_map[first]
         while curr != first:
             lst.append(curr)
+            curr = entry_map[curr]
+        return lst
+
+    def raffle_entries_to_orig_entry_list(self, raffle_entries):
+        # TODO: this is duplication of above code. fix this.
+        lookup = {}
+        entry_map = {}
+        for entry in raffle_entries:
+            lookup[entry.sender_id] = entry
+            entry_map[entry.sender_id] = entry.receiver_id
+        first = raffle_entries[0].sender_id
+        lst = [lookup[first]]
+        curr = entry_map[first]
+        while curr != first:
+            lst.append(lookup[curr])
             curr = entry_map[curr]
         return lst
 
@@ -265,7 +280,7 @@ def only_in_raffle_channel():
 
 def only_in_debug_channel():
     async def predicate(ctx):
-        return ctx.channel.id == CONFIG["GUILD"].get("debug-channel-id")
+        return ctx.channel.id == CONFIG["GUILD"].get("debug-channel-id") or ctx.channel.id == raffle_channel_id
     return commands.check(predicate)
 
 def typing_indicator():
