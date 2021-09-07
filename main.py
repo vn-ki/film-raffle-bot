@@ -68,9 +68,10 @@ class MyClient(commands.Bot):
             return
         roll_msg = ''
         recs = self.raffle_entries_to_orig_entry_list(recs)
-        logger.info('send_all_reccs: recs={recs}')
+        logger.info(f'send_all_reccs: recs={recs}')
         for rec in recs:
             if rec.recomm == None:
+                logger.info('no reccom found so skipping')
                 continue
             d_sender = self.get_user(int(rec.sender.user_id))
             d_receiver = self.get_user(int(rec.receiver.user_id))

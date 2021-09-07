@@ -38,6 +38,9 @@ class Raffle(Base):
     receiver = relationship("User", foreign_keys=[receiver_id], backref=backref(
         "received_recomm", uselist=False), lazy='subquery')
 
+    def __repr__(self):
+        return f'RaffleEntry<sender_id={self.sender_id} receiver_id={self.receiver_id} recomm="{self.recomm}">'
+
 
 class Database:
     Session = None
