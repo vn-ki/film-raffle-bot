@@ -166,6 +166,7 @@ The time has come! Please provide your recommendation in the r/Letterboxd server
         lst = [lookup[first]]
         curr = entry_map[first]
         while curr != first:
+            logger.info(f'curr={curr} first={first}')
             lst.append(lookup[curr])
             curr = entry_map[curr]
         return lst
