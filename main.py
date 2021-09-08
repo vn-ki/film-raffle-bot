@@ -496,7 +496,12 @@ async def dump_reccs(ctx):
             receiver_name += f' ({rec.receiver.lb_username})'
         roll_msg += f'{sender_name} » {receiver_name} | {movie_title}\n'
 
-        movie, year = movie_title.rsplit('(', 1)
+        # TODO: refactor
+        movie_split = movie_title.rsplit('(', 1)
+        if len(movie_split) == 2:
+            movie, year = movie_split
+        else:
+            movie, year = movie_title, ''
         year = year.strip(')')
         if len(year) != 4:
             movie = movie_title
