@@ -5,6 +5,7 @@ import random
 import copy
 import re
 import os
+import csv
 import functools
 from datetime import datetime, timedelta, timezone
 from io import StringIO
@@ -464,9 +465,17 @@ async def dump_reccs(ctx):
     if len(recs) == 0:
         return
     roll_msg = ''
+    csv_content = StringIO()
+    csv_writer = csv.DictWriter(csv_content, fieldnames=['Position', 'Name', 'Year', 'Description'])
+    csv_writer.writeheader()
     recs = bot.raffle_entries_to_orig_entry_list(recs)
     logger.info(f'dump-recs: recs={recs}')
-    for rec in recs:
+
+    def linkify_user(name, lb_username):
+        if lb_username is None:
+            return name
+        return f'<a href="https://letterboxd.com/{lb_username}">{name}</a>'
+    for position, rec in enumerate(recs):
         if rec.recomm == None:
             logger.info('no reccom found so skipping')
             continue
@@ -487,7 +496,23 @@ async def dump_reccs(ctx):
             receiver_name += f' ({rec.receiver.lb_username})'
         roll_msg += f'{sender_name} » {receiver_name} | {movie_title}\n'
 
+        movie, year = movie_title.rsplit('(', 1)
+        year = year.strip(')')
+        if len(year) != 4:
+            movie = movie_title
+            year = ''
+        sender_link = linkify_user(d_sender.name, rec.sender.lb_username)
+        receiver_link = linkify_user(d_receiver.name, rec.receiver.lb_username)
+        csv_writer.writerow({
+            "Position": position,
+            "Name": movie,
+            "Year": year,
+            "Description": f'{sender_link} » {receiver_link}'
+        })
+
+    csv_content.seek(0)
     await ctx.channel.send("", file=discord.File(StringIO(roll_msg), "recs.txt"))
+    await ctx.channel.send("", file=discord.File(csv_content, "recs.csv"))
 
 
 @bot.command(name='warn-mia')
