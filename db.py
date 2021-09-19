@@ -32,6 +32,7 @@ class Raffle(Base):
     receiver_id = Column(Text, ForeignKey('User.user_id'), primary_key=True)
     guild_id = Column(Text, ForeignKey('Guild.guild_id'))
     recomm = Column(Text, nullable=True)
+    recomm_identifier = Column(Text, nullable=True)
 
     sender = relationship("User", foreign_keys=[
                           sender_id], backref=backref("given_recomm", uselist=False), lazy='subquery')
@@ -162,7 +163,7 @@ class Database:
             await session.commit()
 
     # Update raffle entry with movie recommendation
-    async def recomm_movie(self, guild_id, sender_id, recomm):
+    async def recomm_movie(self, guild_id, sender_id, recomm, recomm_identifier):
         sender_id = str(sender_id)
         guild_id = str(guild_id)
         async with self.Session() as session:
@@ -173,6 +174,7 @@ class Database:
                 logger.warning('raffle entry not found')
                 return
             result.recomm = recomm
+            result.recomm_identifier = recomm_identifier
 
             await session.commit()
 

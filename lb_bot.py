@@ -43,11 +43,13 @@ async def get_movie_title(query):
             if resp.status >= 400:
                 raise RuntimeError()
             soup = BeautifulSoup(await resp.text(), features="html.parser")
-            title = soup.select_one('ul.results > li').select_one(
-                'span.film-title-wrapper > a').text
-            logger.info(f"got title '{title}' for query '{query}'")
-            return prettyprint_movie(title)
-    return ''
+            anchor = soup.select_one('ul.results > li').select_one(
+                'span.film-title-wrapper > a')
+            title = anchor.text
+            url = anchor.attrs.get('href', '')
+            logger.info(f"got title '{title}' and '{url}' for query '{query}'")
+            return prettyprint_movie(title), url
+    return '', ''
 
 
 def __check_year(keywords):

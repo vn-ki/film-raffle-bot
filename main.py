@@ -548,9 +548,10 @@ async def recc_intercept(ctx, *, movie_query):
     if not (await db.get_guild(ctx.guild.id)).raffle_rolled:
         return
     movie_title = ''
+    url = None
     raffle_channel = bot.get_channel(raffle_channel_id)
     try:
-        movie_title = await get_movie_title(movie_query)
+        movie_title, url = await get_movie_title(movie_query)
     except Exception as e:
         logger.error(f"error occured while getting '{movie_query}'")
 
@@ -559,7 +560,7 @@ async def recc_intercept(ctx, *, movie_query):
 
     raffle_role = ctx.guild.get_role(raffle_role_id)
     await ctx.author.remove_roles(raffle_role)
-    await db.recomm_movie(ctx.guild.id, ctx.author.id, movie_title)
+    await db.recomm_movie(ctx.guild.id, ctx.author.id, movie_title, url)
     raffle_entry = await db.get_raffle_entry_by_sender(ctx.guild.id, ctx.author.id)
     sender = ctx.guild.get_member(int(raffle_entry.sender_id))
     receiver = ctx.guild.get_member(int(raffle_entry.receiver_id))
