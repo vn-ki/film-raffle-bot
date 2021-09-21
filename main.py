@@ -51,7 +51,7 @@ class MyClient(commands.Bot):
 
     async def ping_user(self, guild, user1, user2):
         member = guild.get_member(user1.id)
-        raffle_channel = guild.get_channel(self.raffle_channel_id)
+        raffle_channel = guild.get_channel(CONFIG["GUILD"]["film-raffle-channel-id"])
 
         if member is None:
             return
@@ -229,7 +229,7 @@ def privileged():
 
 def only_in_raffle_channel():
     async def predicate(ctx):
-        return ctx.channel.id == raffle_channel_id
+        return ctx.channel.id == CONFIG["GUILD"]["film-raffle-channel-id"]
     return commands.check(predicate)
 
 def only_in_debug_channel():
@@ -490,10 +490,10 @@ async def dump_reccs(ctx):
 
         sender_name = d_sender.name
         if rec.sender.lb_username:
-            sender_name += f' ({rec.sender.lb_username})'
+            sender_name = f'<a href="https://letterboxd.com/{rec.sender.lb_username}">{sender_name}</a>'
         receiver_name = d_receiver.name
         if rec.receiver.lb_username:
-            receiver_name += f' ({rec.receiver.lb_username})'
+            receiver_name = f'<a href="https://letterboxd.com/{rec.receiver.lb_username}">{receiver_name}</a>'
         roll_msg += f'{sender_name} » {receiver_name} | {movie_title}\n'
 
         # TODO: refactor

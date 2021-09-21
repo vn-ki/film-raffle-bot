@@ -5,9 +5,9 @@ CONFIG = {}
 CONFIG["GUILD"] = {
     "film-raffle-role-id": int(os.getenv('RAFFLE_ROLE_ID')),
     "film-raffle-channel-id": int(os.getenv('RAFFLE_CHANNEL_ID')),
-    "debug-channel-id": int(os.getenv('RAFFLE_DEBUG_CHANNEL_ID', 0)),
     # where to dumb all recs till now before clearing
     "all-recs-channel-id": int(os.getenv('RAFFLE_CHANNEL_ID')),
+    "debug-channel-id": int(os.getenv('RAFFLE_DEBUG_CHANNEL_ID', 0)),
     "privileged-roles": [int(id_) for id_ in os.getenv('PRIVILEGED_ROLES').split(',')],
 }
 
