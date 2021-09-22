@@ -548,7 +548,7 @@ async def dump_recs_raw(ctx, with_reviews=False):
         receiver_link = linkify_user(d_receiver.name, rec.receiver.lb_username)
         description = f'{sender_link} » {receiver_link}'
         if review:
-            description += ' <a href="{review.url}">Link to review</a>'
+            description += f' <a href="{review.url}">Link to review</a>'
         csv_writer.writerow({
             "Position": position,
             "Name": movie,
