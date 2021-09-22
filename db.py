@@ -42,6 +42,12 @@ class Raffle(Base):
     def __repr__(self):
         return f'RaffleEntry<sender_id={self.sender_id} receiver_id={self.receiver_id} recomm="{self.recomm}">'
 
+class NaughtyList(Base):
+    __tablename__ = 'NaughtyList'
+
+    user_id = Column(Text, ForeignKey('User.user_id'), primary_key=True)
+    guild_id = Column(Text, ForeignKey('Guild.guild_id'), primary_key=True)
+
 
 class Database:
     Session = None
@@ -126,6 +132,41 @@ class Database:
                                        lb_username=lb_username, note=note)
             await session.execute(stmt)
             await session.commit()
+
+    async def add_user_to_naughty_list(self, guild_id, user_id):
+        """Add new user to database"""
+        user_id = str(user_id)
+        guild_id = str(guild_id)
+        async with self.Session() as session:
+            stmt = insert(NaughtyList).values(guild_id=guild_id, user_id=user_id)
+            await session.execute(stmt)
+            await session.commit()
+
+    async def add_users_to_naughty_list(self, guild_id, user_ids):
+        """Add new user to database"""
+        guild_id = str(guild_id)
+        async with self.Session() as session:
+            entries = [
+                NaughtyList(user_id=str(user_id), guild_id=guild_id)
+                for user_id in user_ids
+            ]
+            session.add_all(entries)
+            await session.commit()
+
+    async def remove_user_from_naughty_list(self, guild_id, user_id):
+        """Add new user to database"""
+        user_id = str(user_id)
+        guild_id = str(guild_id)
+        async with self.Session() as session:
+            stmts = delete(NaughtyList).filter_by(guild_id=guild_id).filter_by(user_id=user_id)
+            await session.execute(stmt)
+            await session.commit()
+
+    async def get_naughtly_list(self, guild_id):
+        guild_id = str(guild_id)
+        async with self.Session() as session:
+            result = await session.execute(select(NaughtyList).filter_by(guild_id=guild_id))
+            return result.scalars().all()
 
     async def update_user(self, user_id, *, lb_username=None, note=None):
         """Add new user to database"""

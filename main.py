@@ -418,6 +418,7 @@ async def reroll(ctx):
     mia_members = await db.get_mia(guild.id)
     mia_member_id_set = set([str(member.sender_id) for member in mia_members])
 
+    # await db.add_users_to_naughty_list(guild.id, mia_member_id_set)
     raffle_entries = await db.get_all_reccs(guild.id)
     for entry in raffle_entries:
         if ctx.guild.get_member(int(entry.sender_id)) is None:
@@ -482,8 +483,12 @@ async def dump_recs_raw(ctx, with_reviews=False):
         return
     roll_msg = ''
     csv_content = StringIO()
+    csv_review_content = StringIO()
     csv_writer = csv.DictWriter(csv_content, fieldnames=['Position', 'Name', 'Year', 'Description'])
     csv_writer.writeheader()
+    if with_reviews:
+        csv_review_writer = csv.DictWriter(csv_review_content, fieldnames=['sender', 'receiver', 'sender_lb', 'receiver_lb', 'sender_id', 'receiver_id', 'film_title', 'film_id', 'review_link', 'review_rating'])
+        csv_review_writer.writeheader()
     recs = [rec for rec in bot.raffle_entries_to_orig_entry_list(recs) if rec.recomm]
     logger.info(f'dump-recs: recs={recs}')
     review_map = {}
@@ -550,10 +555,32 @@ async def dump_recs_raw(ctx, with_reviews=False):
             "Year": year,
             "Description": description
         })
+        if with_reviews:
+            review = review_map.get(rec.receiver.lb_username)
+            review_link = None
+            review_rating = None
+            if review:
+                review_link = review.url
+                review_rating = review.rating
+            csv_review_writer.writerow({
+                'sender': d_sender.name,
+                'receiver': d_receiver.name,
+                'sender_lb': rec.sender.lb_username,
+                'receiver_lb': rec.receiver.lb_username,
+                'sender_id': d_sender.id,
+                'receiver_id': d_receiver.id,
+                'film_title': rec.recomm,
+                'film_id': rec.recomm_identifier,
+                'review_link': review_link,
+                'review_rating': review_rating
+            })
 
     csv_content.seek(0)
     await ctx.channel.send("", file=discord.File(StringIO(roll_msg), "recs.txt"))
     await ctx.channel.send("", file=discord.File(csv_content, "recs.csv"))
+    if with_reviews:
+        csv_review_content.seek(0)
+        await ctx.channel.send("", file=discord.File(csv_review_content, "backup.csv"))
 
 
 @bot.command(name='warn-mia')
