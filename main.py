@@ -11,9 +11,10 @@ from datetime import datetime, timedelta, timezone
 from io import StringIO
 
 from discord.ext import commands
+import aiohttp
 
 from config import CONFIG
-from lb_bot import get_movie_title
+from lb_bot import get_movie_title, get_user_review
 from db import Database, Raffle
 
 from commands.userdata import Userdata
@@ -461,6 +462,21 @@ async def dump_reccs(ctx):
     """
     Pretty prints all the recommendations till now.
     """
+    await dump_recs_raw(ctx)
+
+
+@bot.command(name='dump-recs-reviews')
+@only_in_debug_channel()
+@privileged()
+@typing_indicator()
+async def dump_recs_reviews(ctx):
+    """
+    Pretty prints all the recommendations till now.
+    """
+    await dump_recs_raw(ctx, True)
+
+
+async def dump_recs_raw(ctx, with_reviews=False):
     recs = await db.get_all_reccs(ctx.guild.id)
     if len(recs) == 0:
         return
@@ -468,18 +484,29 @@ async def dump_reccs(ctx):
     csv_content = StringIO()
     csv_writer = csv.DictWriter(csv_content, fieldnames=['Position', 'Name', 'Year', 'Description'])
     csv_writer.writeheader()
-    recs = bot.raffle_entries_to_orig_entry_list(recs)
+    recs = [rec for rec in bot.raffle_entries_to_orig_entry_list(recs) if rec.recomm]
     logger.info(f'dump-recs: recs={recs}')
+    review_map = {}
+
+    if with_reviews:
+        async with aiohttp.ClientSession() as session:
+            tasks = []
+            for rec in recs:
+                if rec.receiver.lb_username and rec.recomm_identifier:
+                    film_id = rec.recomm_identifier
+                    tasks.append(asyncio.ensure_future(get_user_review(session, rec.receiver.lb_username, film_id)))
+                reviews = await asyncio.gather(*tasks)
+                for review in reviews:
+                    if review:
+                        review_map[review.user] = review
+
+    logger.info(f'review_map={review_map}')
 
     def linkify_user(name, lb_username):
         if lb_username is None:
             return name
         return f'<a href="https://letterboxd.com/{lb_username}">{name}</a>'
     for position, rec in enumerate(recs):
-        if rec.recomm == None:
-            logger.info('no reccom found so skipping')
-            continue
-
         d_sender = bot.get_user(int(rec.sender.user_id))
         d_receiver = bot.get_user(int(rec.receiver.user_id))
         if d_sender == None or d_receiver == None:
@@ -487,14 +514,15 @@ async def dump_reccs(ctx):
             continue
 
         movie_title = rec.recomm
+        review = None
 
         sender_name = d_sender.name
         if rec.sender.lb_username:
             sender_name = f'<a href="https://letterboxd.com/{rec.sender.lb_username}">{sender_name}</a>'
         receiver_name = d_receiver.name
         if rec.receiver.lb_username:
+            review = review_map.get(rec.receiver.lb_username)
             receiver_name = f'<a href="https://letterboxd.com/{rec.receiver.lb_username}">{receiver_name}</a>'
-        roll_msg += f'{sender_name} » {receiver_name} | {movie_title}\n'
 
         # TODO: refactor
         movie_split = movie_title.rsplit('(', 1)
@@ -502,17 +530,25 @@ async def dump_reccs(ctx):
             movie, year = movie_split
         else:
             movie, year = movie_title, ''
+        movie = movie.strip()
         year = year.strip(')')
         if len(year) != 4:
             movie = movie_title
             year = ''
+        if review:
+            roll_msg += f'{sender_name} » {receiver_name} | <b>{movie}</b> ({year}) | <a href="{review.url}">Review</a>\n'
+        else:
+            roll_msg += f'{sender_name} » {receiver_name} | <b>{movie}</b> ({year})\n'
         sender_link = linkify_user(d_sender.name, rec.sender.lb_username)
         receiver_link = linkify_user(d_receiver.name, rec.receiver.lb_username)
+        description = f'{sender_link} » {receiver_link}'
+        if review:
+            description += ' <a href="{review.url}">Link to review</a>'
         csv_writer.writerow({
             "Position": position,
             "Name": movie,
             "Year": year,
-            "Description": f'{sender_link} » {receiver_link}'
+            "Description": description
         })
 
     csv_content.seek(0)

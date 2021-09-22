@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 from re import fullmatch
+from dataclasses import dataclass
 
 import requests
 from bs4 import BeautifulSoup
@@ -11,6 +12,7 @@ from urllib.parse import urljoin, quote_plus
 
 logger = logging.getLogger('raffle_bot.db')
 
+LB_BASE_URL = 'https://letterboxd.com'
 LB_SEARCH_ENDPOINT = 'https://letterboxd.com/search/films/'
 
 def prettyprint_movie(movie_title):
@@ -52,6 +54,25 @@ async def get_movie_title(query):
     return '', ''
 
 
+@dataclass
+class FilmReview:
+    user: str
+    url: str
+    rating: int
+
+
+async def get_user_review(session, user, film_id):
+    user = user.strip()
+    url = f'{LB_BASE_URL}/{user}{film_id}'
+    logger.info(f'fetching url {url}')
+    async with session.get(url) as resp:
+        logger.info(f'got status {resp.status}')
+        if resp.status >= 400:
+            return None
+        return FilmReview(user, url, None)
+    return None
+
+
 def __check_year(keywords):
     """
     Taken from https://github.com/velzerat/lb-bot
@@ -86,6 +107,7 @@ def __check_year(keywords):
 
 if __name__ == '__main__':
     # t = get_movie_title('little forest summer/autumn')
-    t = get_movie_title('young mr. Lincoln')
+    # t = get_movie_title('young mr. Lincoln')
+    t = get_user_review('vnki', '/film/my-own-private-idaho')
     loop = asyncio.get_event_loop()
     r = loop.run_until_complete(t)
