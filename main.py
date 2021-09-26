@@ -285,6 +285,15 @@ Want to participate in the next round? Simply react {bot.emoji_for_role} below t
     await silent_pin_message(new_message)
     await db.start_raffle(guild.id, new_message.id)
 
+@bot.command(name='fr-stop')
+@privileged()
+@only_in_raffle_channel()
+@typing_indicator()
+async def raffle_start(ctx):
+    """
+    Starts the film raffle. Sends a message with a reaction to join.
+    """
+    await db.guild_set_raffle_rolled(ctx.guild.id, False)
 
 async def add_guild_if_not_exists(guild_id):
     guild = await db.get_guild(guild_id)
