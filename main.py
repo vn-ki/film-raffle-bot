@@ -288,12 +288,13 @@ Want to participate in the next round? Simply react {bot.emoji_for_role} below t
 @bot.command(name='fr-stop')
 @privileged()
 @only_in_raffle_channel()
-@typing_indicator()
 async def raffle_start(ctx):
     """
-    Starts the film raffle. Sends a message with a reaction to join.
+    Stops film raffle. This will stop collecting recs.
     """
+    # TODO: do this better, ideally the raffle_status should have 3 states
     await db.guild_set_raffle_rolled(ctx.guild.id, False)
+    await ctx.channel.send("Film raffle stopped.")
 
 async def add_guild_if_not_exists(guild_id):
     guild = await db.get_guild(guild_id)
