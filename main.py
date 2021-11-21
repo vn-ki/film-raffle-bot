@@ -274,15 +274,26 @@ Want to participate in the next round? Simply react {bot.emoji_for_role} below t
     await silent_pin_message(new_message)
     await db.start_raffle(guild.id, new_message.id)
 
-@bot.command(name='fr-stop')
+@bot.command(name='fr-pause')
 @privileged()
 @only_in_raffle_channel()
-async def raffle_start(ctx):
+async def raffle_pause(ctx):
     """
-    Stops film raffle. This will stop collecting recs.
+    Pauses film raffle rec collection.
     """
     # TODO: do this better, ideally the raffle_status should have 3 states
     await db.guild_set_raffle_rolled(ctx.guild.id, False)
+    await ctx.channel.send("Film raffle stopped.")
+
+@bot.command(name='fr-resume')
+@privileged()
+@only_in_raffle_channel()
+async def raffle_resume(ctx):
+    """
+    Resumes film raffle rec collection.
+    """
+    # TODO: do this better, ideally the raffle_status should have 3 states
+    await db.guild_set_raffle_rolled(ctx.guild.id, True)
     await ctx.channel.send("Film raffle stopped.")
 
 async def add_guild_if_not_exists(guild_id):
