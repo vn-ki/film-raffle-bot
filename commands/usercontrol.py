@@ -21,7 +21,7 @@ class Usercontrol(commands.Cog):
             await ctx.channel.send("Naughty user reason updated.")
             return
         await self.db.add_user_to_naughty_list(ctx.guild.id, member.id, reason)
-        await ctx.channel.send("Ho Ho Ho. You've been too naughty.")
+        await ctx.channel.send(f"Ho Ho Ho. You've been too naughty. {member.mention} banned from participating in raffle.")
 
 
     @commands.command(name='fr-unban')
@@ -36,4 +36,4 @@ class Usercontrol(commands.Cog):
             await ctx.channel.send("User not on naughty list.")
             return
         await self.db.remove_user_from_naughty_list(ctx.guild.id, member.id)
-        await ctx.channel.send("Good job getting off the naughty list.")
+        await ctx.channel.send(f"Good job getting off the naughty list. {member.mention} unbanned.")
