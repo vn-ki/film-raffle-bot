@@ -37,3 +37,20 @@ class Usercontrol(commands.Cog):
             return
         await self.db.remove_user_from_naughty_list(ctx.guild.id, member.id)
         await ctx.channel.send(f"Good job getting off the naughty list. {member.mention} unbanned.")
+
+    @commands.command(name='fr-naughty-list')
+    @privileged()
+    @only_in_debug_channel()
+    async def naughty_list(self, ctx):
+        """
+        List the banned users.
+        """
+        naughty_list = await self.db.get_naughtly_list(ctx.guild.id)
+        message = '**__Naughty list__**\n'
+        for user in naughty_list:
+            discord_user = ctx.guild.get_member(int(user.user_id))
+            message += f'{discord_user.mention}'
+            if user.reason:
+                message += ": " + user.reason
+            message += '\n'
+        await ctx.channel.send(message)
