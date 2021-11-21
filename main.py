@@ -68,7 +68,7 @@ The time has come! Please provide your recommendation in the r/Letterboxd server
         # TODO: Fix that
         if lb_user2:
             if lb_user2.lb_username != None:
-                message += f"**Their Letterboxd username is: {lb_user2.lb_username}**\n"
+                message += f"**Their Letterboxd username is: {lb_user2.lb_username}** (https://letterboxd.com/{lb_user2.lb_username})\n"
             if lb_user2.note:
                 message += f"**Additional notes: {lb_user2.note}**\n"
 
@@ -131,6 +131,8 @@ The time has come! Please provide your recommendation in the r/Letterboxd server
             await db.add_user(user.id)
         if dbuser is None or dbuser.lb_username is None:
             await user.send(CONFIG["CHAT"]["DM_INTRO"])
+            return False
+        return True
 
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
         """Gives a role based on a reaction emoji."""
@@ -143,13 +145,20 @@ The time has come! Please provide your recommendation in the r/Letterboxd server
         if role is None:
             logger.error("could not find role to add")
             return
-        await self.create_user_if_not_exist(payload.member)
-        try:
-            await payload.member.add_roles(role)
-            logger.info(f'role assigned to {payload.member.name}')
-        except discord.HTTPException:
-            logger.error("error while adding role")
-            raise
+        user_allowed = await self.create_user_if_not_exist(payload.member)
+        if user_allowed:
+            try:
+                await payload.member.add_roles(role)
+                logger.info(f'role assigned to {payload.member.name}')
+            except discord.HTTPException:
+                logger.error("error while adding role")
+                raise
+        else:
+            channel = self.get_channel(payload.channel_id)
+            message = await channel.fetch_message(payload.message_id)
+            user = self.get_user(payload.user_id)
+            await message.remove_reaction(payload.emoji, user)
+
 
     async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
         """
@@ -615,7 +624,7 @@ async def warn_mia(ctx):
         await raffle_channel.send(message)
 
 
-@bot.command(name='f', aliases=['film', 'kino'])
+@bot.command(name='f', aliases=['film', 'kino', 'F'])
 @only_in_raffle_channel()
 async def recc_intercept(ctx, *, movie_query):
     if not (await db.get_guild(ctx.guild.id)).raffle_rolled:
@@ -632,9 +641,13 @@ async def recc_intercept(ctx, *, movie_query):
         movie_title = movie_query
 
     raffle_role = ctx.guild.get_role(raffle_role_id)
+    raffle_entry = await db.get_raffle_entry_by_sender(ctx.guild.id, ctx.author.id)
+    if raffle_entry is None:
+        # this person is not part of the raffle
+        await raffle_channel.send(f"Who are you. I don't know you. Sign up for raffle before rolling next time. smh.")
+        return
     await ctx.author.remove_roles(raffle_role)
     await db.recomm_movie(ctx.guild.id, ctx.author.id, movie_title, url)
-    raffle_entry = await db.get_raffle_entry_by_sender(ctx.guild.id, ctx.author.id)
     sender = ctx.guild.get_member(int(raffle_entry.sender_id))
     receiver = ctx.guild.get_member(int(raffle_entry.receiver_id))
     if receiver is None:
