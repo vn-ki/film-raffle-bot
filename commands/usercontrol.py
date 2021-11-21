@@ -1,12 +1,16 @@
 from discord.ext import commands
 import discord
 
+from decorators import privileged, only_in_debug_channel
+
 
 class Usercontrol(commands.Cog):
     def __init__(self, db):
         self.db = db
 
     @commands.command(name='fr-ban')
+    @privileged()
+    @only_in_debug_channel()
     async def ban(self, ctx, member: discord.Member, *, reason=None):
         """
         Ban a user from participating in the raffle. They can still shout in the server. !fr-ban @user
@@ -21,6 +25,8 @@ class Usercontrol(commands.Cog):
 
 
     @commands.command(name='fr-unban')
+    @privileged()
+    @only_in_debug_channel()
     async def unban(self, ctx, *, member: discord.Member):
         """
         Unban a user. Good job on being nice.
