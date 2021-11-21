@@ -28,7 +28,7 @@ def only_in_raffle_channel():
 
 def only_in_debug_channel():
     async def predicate(ctx):
-        return ctx.channel.id == CONFIG["GUILD"].get("debug-channel-id") or ctx.channel.id == raffle_channel_id
+        return ctx.channel.id == CONFIG["GUILD"].get("debug-channel-id") or ctx.channel.id == CONFIG["GUILD"]["film-raffle-channel-id"]
     return commands.check(predicate)
 
 def typing_indicator():
