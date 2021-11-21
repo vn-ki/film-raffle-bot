@@ -30,6 +30,9 @@ class Userdata(commands.Cog):
         """
         Use !setnotes followed by any preferences you may have (streaming services, preferred length, genre/mood, etc.) This is optional.
         """
+        if len(note) > 1200:
+            await ctx.channel.send("You don't have to write them a novel. Try again with fewer words (<1200 characters).")
+            return
         user = await self.db.get_user(ctx.author.id)
         if user is None:
             await self.db.add_user(ctx.author.id, None, note)

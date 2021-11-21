@@ -18,6 +18,7 @@ from lb_bot import get_movie_title, get_user_review
 from db import Database, Raffle
 
 from commands.userdata import Userdata
+from commands.usercontrol import Usercontrol
 
 client = discord.Client()
 
@@ -125,14 +126,25 @@ The time has come! Please provide your recommendation in the r/Letterboxd server
             curr = entry_map[curr]
         return lst
 
+    async def is_user_allowed(self, guild_id, discord_user):
+        dbuser = await db.get_user(discord_user.id)
+        if dbuser is None or dbuser.lb_username is None:
+            await discord_user.send(CONFIG["CHAT"]["DM_INTRO"])
+            return False
+        naughty = await db.get_user_naughty(guild_id, discord_user.id)
+        if naughty:
+            logger.info("user {discord_user.id} naughty")
+            message = "You've been banned from participating in the raffle. Contact the mods if you think this is a mistake."
+            if naughty.reason:
+                message += f'\nReason: {naughty.reason}'
+            await discord_user.send(message)
+            return False
+        return True
+
     async def create_user_if_not_exist(self, user):
         dbuser = await db.get_user(user.id)
         if dbuser is None:
             await db.add_user(user.id)
-        if dbuser is None or dbuser.lb_username is None:
-            await user.send(CONFIG["CHAT"]["DM_INTRO"])
-            return False
-        return True
 
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
         """Gives a role based on a reaction emoji."""
@@ -145,7 +157,9 @@ The time has come! Please provide your recommendation in the r/Letterboxd server
         if role is None:
             logger.error("could not find role to add")
             return
-        user_allowed = await self.create_user_if_not_exist(payload.member)
+
+        await self.create_user_if_not_exist(payload.member)
+        user_allowed = await self.is_user_allowed(payload.guild_id, payload.member)
         if user_allowed:
             try:
                 await payload.member.add_roles(role)
@@ -323,7 +337,7 @@ async def send_roll_msg(map_list, channel):
             if pair[1]:
                 user = pair[1].mention
             # one of the user couldnt be found, because they probably left he server
-            roll_msg += '{user} could not be matched because "reasons". Contact the bot admin and threat him to write better code.'
+            roll_msg += '{user} could not be matched because "reasons". Contact the bot admin and threaten him to write better code.'
             continue
         roll_msg += '{} » {}\n'.format(pair[0].mention, pair[1].mention)
         # This length is due to Discord forbidding messages greater than 2k chars
@@ -672,6 +686,7 @@ async def on_command_error(ctx, error):
 
 
 bot.add_cog(Userdata(db))
+bot.add_cog(Usercontrol(db))
 
 async def main():
     await db.init()

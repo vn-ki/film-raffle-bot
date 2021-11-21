@@ -47,6 +47,7 @@ class NaughtyList(Base):
 
     user_id = Column(Text, ForeignKey('User.user_id'), primary_key=True)
     guild_id = Column(Text, ForeignKey('Guild.guild_id'), primary_key=True)
+    reason = Column(Text, nullable=True)
 
 
 class Database:
@@ -133,17 +134,25 @@ class Database:
             await session.execute(stmt)
             await session.commit()
 
-    async def add_user_to_naughty_list(self, guild_id, user_id):
-        """Add new user to database"""
+    async def add_user_to_naughty_list(self, guild_id, user_id, reason=None):
         user_id = str(user_id)
         guild_id = str(guild_id)
         async with self.Session() as session:
-            stmt = insert(NaughtyList).values(guild_id=guild_id, user_id=user_id)
+            stmt = insert(NaughtyList).values(guild_id=guild_id, user_id=user_id, reason=reason)
             await session.execute(stmt)
             await session.commit()
 
+    async def update_naughty_user(self, guild_id, user_id, reason=None):
+        user_id = str(user_id)
+        guild_id = str(guild_id)
+        async with self.Session() as session:
+            stmt = select(NaughtyList).filter_by(guild_id=guild_id).filter_by(user_id=user_id)
+            result = await session.execute(stmt)
+            naughty = result.scalar_one_or_none()
+            naughty.reason = reason
+            await session.commit()
+
     async def add_users_to_naughty_list(self, guild_id, user_ids):
-        """Add new user to database"""
         guild_id = str(guild_id)
         async with self.Session() as session:
             entries = [
@@ -154,11 +163,10 @@ class Database:
             await session.commit()
 
     async def remove_user_from_naughty_list(self, guild_id, user_id):
-        """Add new user to database"""
         user_id = str(user_id)
         guild_id = str(guild_id)
         async with self.Session() as session:
-            stmts = delete(NaughtyList).filter_by(guild_id=guild_id).filter_by(user_id=user_id)
+            stmt = delete(NaughtyList).filter_by(guild_id=guild_id).filter_by(user_id=user_id)
             await session.execute(stmt)
             await session.commit()
 
@@ -167,6 +175,14 @@ class Database:
         async with self.Session() as session:
             result = await session.execute(select(NaughtyList).filter_by(guild_id=guild_id))
             return result.scalars().all()
+
+    async def get_user_naughty(self, guild_id, user_id):
+        user_id = str(user_id)
+        guild_id = str(guild_id)
+        async with self.Session() as session:
+            stmt = select(NaughtyList).filter_by(guild_id=guild_id).filter_by(user_id=user_id)
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
 
     async def update_user(self, user_id, *, lb_username=None, note=None):
         """Add new user to database"""
