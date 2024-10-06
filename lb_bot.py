@@ -13,7 +13,7 @@ from urllib.parse import urljoin, quote_plus
 logger = logging.getLogger('raffle_bot.db')
 
 LB_BASE_URL = 'https://letterboxd.com'
-LB_SEARCH_ENDPOINT = 'https://letterboxd.com/search/films/'
+LB_SEARCH_ENDPOINT = 'https://letterboxd.com/s/search/films/'
 
 def prettyprint_movie(movie_title):
     """
@@ -43,12 +43,14 @@ async def get_movie_title(query):
     async with aiohttp.ClientSession(loop=asyncio.get_event_loop()) as session:
         async with session.get(urljoin(LB_SEARCH_ENDPOINT, quote_plus(query))) as resp:
             if resp.status >= 400:
-                raise RuntimeError()
+                return '', ''
             soup = BeautifulSoup(await resp.text(), features="html.parser")
-            anchor = soup.select_one('ul.results > li').select_one(
-                'span.film-title-wrapper > a')
-            title = anchor.text
-            url = anchor.attrs.get('href', '')
+            anchor = soup.select_one('ul.results > li')
+            if anchor == None:
+                return '', ''
+            film = anchor.select_one('span.film-title-wrapper > a')
+            title = film.text
+            url = film.attrs.get('href', '')
             logger.info(f"got title '{title}' and '{url}' for query '{query}'")
             return prettyprint_movie(title), url
     return '', ''
@@ -71,6 +73,12 @@ async def get_user_review(session, user, film_id):
             return None
         return FilmReview(user, url, None)
     return None
+
+async def try_get_user_review(session, user, film_name):
+    print(f'getting {film_name}')
+    title, url = await get_movie_title(film_name)
+    if url:
+        return await get_user_review(session, user, url)
 
 
 def __check_year(keywords):
@@ -107,7 +115,8 @@ def __check_year(keywords):
 
 if __name__ == '__main__':
     # t = get_movie_title('little forest summer/autumn')
-    # t = get_movie_title('young mr. Lincoln')
-    t = get_user_review('vnki', '/film/my-own-private-idaho')
+    t = get_movie_title('young mr. Lincoln')
+    #t = get_user_review('vnki', '/film/my-own-private-idaho')
     loop = asyncio.get_event_loop()
     r = loop.run_until_complete(t)
+    print(r)

@@ -14,7 +14,7 @@ from discord.ext import commands
 import aiohttp
 
 from config import CONFIG
-from lb_bot import get_movie_title, get_user_review
+from lb_bot import get_movie_title, get_user_review, try_get_user_review
 from db import Database, Raffle
 from decorators import only_in_debug_channel, only_in_raffle_channel, typing_indicator, privileged
 
@@ -490,9 +490,12 @@ async def dump_recs_raw(ctx, with_reviews=False):
     roll_msg = ''
     csv_content = StringIO()
     csv_review_content = StringIO()
+    naughty_users = StringIO()
     csv_writer = csv.DictWriter(csv_content, fieldnames=['Position', 'Name', 'Year', 'Description'])
     csv_writer.writeheader()
     if with_reviews:
+        csv_naughty = csv.DictWriter(naughty_users, fieldnames=['naughty_user', 'naughty_user_id', 'recommendation', 'sender'])
+        csv_naughty.writeheader()
         csv_review_writer = csv.DictWriter(csv_review_content, fieldnames=['sender', 'receiver', 'sender_lb', 'receiver_lb', 'sender_id', 'receiver_id', 'film_title', 'film_id', 'review_link', 'review_rating'])
         csv_review_writer.writeheader()
     recs = [rec for rec in bot.raffle_entries_to_orig_entry_list(recs) if rec.recomm]
@@ -506,6 +509,9 @@ async def dump_recs_raw(ctx, with_reviews=False):
                 if rec.receiver.lb_username and rec.recomm_identifier:
                     film_id = rec.recomm_identifier
                     tasks.append(asyncio.ensure_future(get_user_review(session, rec.receiver.lb_username, film_id)))
+                elif rec.receiver.lb_username:
+                    film_id = rec.recomm
+                    tasks.append(asyncio.ensure_future(try_get_user_review(session, rec.receiver.lb_username, film_id)))
                 reviews = await asyncio.gather(*tasks)
                 for review in reviews:
                     if review:
@@ -555,6 +561,13 @@ async def dump_recs_raw(ctx, with_reviews=False):
         description = f'{sender_link} » {receiver_link}'
         if review:
             description += f' <a href="{review.url}">Link to review</a>'
+        else:
+            csv_naughty.writerow({
+                'naughty_user': d_receiver.name,
+                'naughty_user_id': d_receiver.id,
+                'recommendation': rec.recomm,
+                'sender': d_sender.name,
+            })
         csv_writer.writerow({
             "Position": position,
             "Name": movie,
@@ -587,6 +600,8 @@ async def dump_recs_raw(ctx, with_reviews=False):
     if with_reviews:
         csv_review_content.seek(0)
         await ctx.channel.send("", file=discord.File(csv_review_content, "backup.csv"))
+        naughty_users.seek(0)
+        await ctx.channel.send("", file=discord.File(naughty_users, "naughtylist.csv"))
 
 
 @bot.command(name='warn-mia')
@@ -625,7 +640,8 @@ async def recc_intercept(ctx, *, movie_query):
         logger.error(f"error occured while getting '{movie_query}'")
 
     if movie_title == '':
-        movie_title = movie_query
+        await raffle_channel.send(f"I do not know about '{movie_query}'. Please make sure you have only included the title of the movie. If there are multiple movies with the same name, include the year next to the name. If you include the year, make sure it's the correct year.")
+        return
 
     raffle_role = ctx.guild.get_role(raffle_role_id)
     raffle_entry = await db.get_raffle_entry_by_sender(ctx.guild.id, ctx.author.id)
