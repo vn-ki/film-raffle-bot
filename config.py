@@ -49,6 +49,8 @@ CONFIG["BOT"] = {
     "bot-token": os.getenv("BOT_TOKEN"),
 }
 
+CONFIG["DATABASE_URL"] = os.getenv("DATABASE_URL")
+
 CONFIG["DATABASE"] = {
     "db-username": os.getenv('DB_USERNAME'),
     "db-password": os.getenv('DB_PASSWORD'),

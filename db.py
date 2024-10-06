@@ -1,4 +1,5 @@
 from sqlalchemy import create_engine, Column, Text, ForeignKey, select, insert, update, delete, or_, Boolean
+from sqlalchemy.sql import text
 from sqlalchemy.orm import relationship, backref, sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -55,16 +56,17 @@ class Database:
     Engine = None
     engine_url = None
 
-    def __init__(self, db_name, db_host, db_username, db_password, debug=False):
-        self.engine_url = f'postgresql+asyncpg://{db_username}:{db_password}@{db_host}/{db_name}'
-        if debug:
-            self.engine_url = 'sqlite+aiosqlite:///./test.db'
+    def __init__(self, engine_url, debug=False):
+        self.engine_url = engine_url
 
     async def init(self):
         # echo=True in the meanwhile for debugging
         self.Engine = create_async_engine(self.engine_url)
 
         async with self.Engine.begin() as conn:
+            # for cockroach
+            await conn.execute(text("SET multiple_active_portals_enabled = true"))
+            await conn.execute(text("SET autocommit_before_ddl = true"))
             await conn.run_sync(Base.metadata.create_all)
 
         self.Session = sessionmaker(

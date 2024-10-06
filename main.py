@@ -24,11 +24,7 @@ from commands.usercontrol import Usercontrol
 client = discord.Client()
 
 db = Database(
-    CONFIG["DATABASE"]["db-name"],
-    CONFIG["DATABASE"]["db-host"],
-    CONFIG["DATABASE"]["db-username"],
-    CONFIG["DATABASE"]["db-password"],
-    debug=os.getenv("DEBUG", False),
+    CONFIG["DATABASE_URL"],
 )
 logger = logging.getLogger('raffle_bot')
 

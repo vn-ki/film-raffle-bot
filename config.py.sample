@@ -10,6 +10,8 @@ CONFIG["BOT"] = {
     "bot-token": "",
 }
 
+CONFIG["DATABASE_URL"] = ""
+
 CONFIG["DATABASE"] = {
     "db-username": "",
     "db-password": "",
