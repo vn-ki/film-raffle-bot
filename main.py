@@ -562,12 +562,13 @@ async def dump_recs_raw(ctx, with_reviews=False):
         if review:
             description += f' <a href="{review.url}">Link to review</a>'
         else:
-            csv_naughty.writerow({
-                'naughty_user': d_receiver.name,
-                'naughty_user_id': d_receiver.id,
-                'recommendation': rec.recomm,
-                'sender': d_sender.name,
-            })
+            if with_reviews:
+                csv_naughty.writerow({
+                    'naughty_user': d_receiver.name,
+                    'naughty_user_id': d_receiver.id,
+                    'recommendation': rec.recomm,
+                    'sender': d_sender.name,
+                })
         csv_writer.writerow({
             "Position": position,
             "Name": movie,
